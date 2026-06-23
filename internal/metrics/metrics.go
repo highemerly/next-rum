@@ -39,6 +39,8 @@ type Metrics struct {
 
 	cfCacheTotal  *prometheus.CounterVec
 	pageviewTotal *prometheus.CounterVec
+	countryTotal  *prometheus.CounterVec
+	asnTotal      *prometheus.CounterVec
 
 	receivedTotal  *prometheus.CounterVec
 	parseSeconds   prometheus.Histogram
@@ -51,6 +53,8 @@ var (
 	navRespLabels  = []string{"service", "path_group", "device", "protocol", "cf_cache"}
 	cfCacheLabels  = []string{"service", "path_group", "status", "protocol", "device"}
 	pageviewLabels = []string{"service", "path_group", "device", "os", "browser", "nav_type"}
+	countryLabels  = []string{"service", "country"}
+	asnLabels      = []string{"service", "asn"}
 )
 
 // New builds and registers all collectors.
@@ -96,6 +100,16 @@ func New() *Metrics {
 			Name: "rum_pageview_total",
 			Help: "Page loads by device, OS and browser (one per navigation event)",
 		}, pageviewLabels),
+		// country/asn kept in their own low-dimensional counters so their
+		// ~country and ~ASN cardinality never multiplies the other label sets.
+		countryTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_country_total",
+			Help: "Page loads by visitor country (CF edge geo; no IP stored)",
+		}, countryLabels),
+		asnTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_asn_total",
+			Help: "Page loads by visitor AS number (CF edge; no IP stored)",
+		}, asnLabels),
 		receivedTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_collector_received_total",
 			Help: "Collected events by kind and status (ok/parse_error/label_rejected)",
@@ -153,6 +167,16 @@ func (m *Metrics) IncCFCache(service, pathGroup, status, protocol, device string
 // distribution (kept off the histograms to protect their cardinality).
 func (m *Metrics) IncPageview(service, pathGroup, device, os, browser, navType string) {
 	m.pageviewTotal.WithLabelValues(service, pathGroup, device, os, browser, navType).Inc()
+}
+
+// IncCountry increments the per-page-load counter for the visitor country.
+func (m *Metrics) IncCountry(service, country string) {
+	m.countryTotal.WithLabelValues(service, country).Inc()
+}
+
+// IncASN increments the per-page-load counter for the visitor AS number.
+func (m *Metrics) IncASN(service, asn string) {
+	m.asnTotal.WithLabelValues(service, asn).Inc()
 }
 
 // IncReceived records a /collect outcome (status = ok/parse_error/label_rejected).

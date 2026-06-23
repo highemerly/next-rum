@@ -34,6 +34,12 @@ spec:
               value: "300"
             - name: CONFIG_RELOAD_SECONDS
               value: "60"
+            # CF-derived geo signal header names (keep in sync with the CF
+            # Transform Rule; rename here without a rebuild).
+            - name: GEO_COUNTRY_HEADER
+              value: "CF-IPCountry"
+            - name: GEO_ASN_HEADER
+              value: "HAN-CF-ASN"
           volumeMounts:
             - name: rum-config
               mountPath: /etc/rum

@@ -51,16 +51,44 @@ type event struct {
 	CFColo       string  `json:"cf_colo"`
 }
 
-// Handler serves /collect.
-type Handler struct {
-	cfg  *config.Loader
-	mx   *metrics.Metrics
-	loki *loki.Client
+// Default header names for the Cloudflare-derived geo signals. Both are
+// overridable (see Options) because the CF/Traefik header naming may change.
+const (
+	DefaultCountryHeader = "CF-IPCountry" // CF default header
+	DefaultASNHeader     = "HAN-CF-ASN"   // set via a CF Transform Rule (ip.src.asnum)
+)
+
+// Options configures the collect handler.
+type Options struct {
+	CountryHeader string // request header carrying the 2-letter country code
+	ASNHeader     string // request header carrying the AS number
 }
 
-// NewHandler wires the collect handler to its dependencies.
-func NewHandler(cfg *config.Loader, mx *metrics.Metrics, lk *loki.Client) *Handler {
-	return &Handler{cfg: cfg, mx: mx, loki: lk}
+// Handler serves /collect.
+type Handler struct {
+	cfg           *config.Loader
+	mx            *metrics.Metrics
+	loki          *loki.Client
+	countryHeader string
+	asnHeader     string
+}
+
+// NewHandler wires the collect handler to its dependencies. Empty header names
+// in opts fall back to the defaults.
+func NewHandler(cfg *config.Loader, mx *metrics.Metrics, lk *loki.Client, opts Options) *Handler {
+	if opts.CountryHeader == "" {
+		opts.CountryHeader = DefaultCountryHeader
+	}
+	if opts.ASNHeader == "" {
+		opts.ASNHeader = DefaultASNHeader
+	}
+	return &Handler{
+		cfg:           cfg,
+		mx:            mx,
+		loki:          lk,
+		countryHeader: opts.CountryHeader,
+		asnHeader:     opts.ASNHeader,
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -86,9 +114,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Geo signals come from Cloudflare's edge as request headers (country is a CF
+	// default; ASN is injected by a Transform Rule). We read the coarse code only
+	// — the client IP itself is never read or stored. Header names are
+	// case-insensitive and configurable. One value applies to the whole batch.
+	country := sanitizeCountry(r.Header.Get(h.countryHeader))
+	asn := sanitizeASN(r.Header.Get(h.asnHeader))
+
 	cfg := h.cfg.Get()
 	for i := range events {
-		h.record(cfg, events[i])
+		h.record(cfg, events[i], country, asn)
 	}
 	h.mx.ObserveParse(time.Since(start).Seconds())
 
@@ -113,7 +148,8 @@ func decodeEvents(body []byte) ([]event, error) {
 }
 
 // record validates and records one event, updating the intake meta-counter.
-func (h *Handler) record(cfg *config.Config, ev event) {
+// country and asn are the per-request geo signals (already sanitized).
+func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 	service, svcRejected := cfg.ValidateService(ev.Service)
 	pathGroup, pgRejected := cfg.ValidatePathGroup(service, ev.PathGroup)
 	device := sanitizeDevice(ev.Device)
@@ -160,8 +196,11 @@ func (h *Handler) record(cfg *config.Config, ev event) {
 			CFCache:   cfCache,
 		}, ev.DNSMs, ev.TCPMs, ev.TLSMs, ev.RequestMs, ev.ResponseMs, ev.TransferSize)
 		h.mx.IncCFCache(service, pathGroup, cfCache, protocol, device)
-		// One navigation == one page load: carry OS/browser distribution here.
+		// One navigation == one page load: carry the OS/browser/geo distribution
+		// here, each in its own counter to keep cardinality isolated.
 		h.mx.IncPageview(service, pathGroup, device, os, browser, navType)
+		h.mx.IncCountry(service, country)
+		h.mx.IncASN(service, asn)
 		h.pushLoki(service, "navigation", ev.TS, map[string]any{
 			"service": service, "kind": "navigation",
 			"path_group": pathGroup, "path": ev.Path,
@@ -171,6 +210,7 @@ func (h *Handler) record(cfg *config.Config, ev event) {
 			"decoded_size": ev.DecodedSize, "protocol": protocol,
 			"cf_cache": cfCache, "cf_colo": ev.CFColo,
 			"device": device, "os": os, "browser": browser, "conn": ev.Conn,
+			"country": country, "asn": asn,
 		})
 
 	default:
@@ -252,6 +292,39 @@ func sanitizeBrowser(v string) string {
 		return "unknown"
 	}
 	return inSet(strings.ToLower(v), browserSet, "other")
+}
+
+// sanitizeCountry accepts a 2-letter ISO 3166-1 alpha-2 code from Cloudflare.
+// Cloudflare overwrites any client-supplied value, so this mainly normalizes
+// case and maps CF's special markers. Anything else clamps to "unknown".
+func sanitizeCountry(v string) string {
+	v = strings.ToUpper(strings.TrimSpace(v))
+	switch v {
+	case "", "XX": // CF: geolocation unavailable
+		return "unknown"
+	case "T1": // CF: Tor exit node
+		return "tor"
+	}
+	if len(v) == 2 && v[0] >= 'A' && v[0] <= 'Z' && v[1] >= 'A' && v[1] <= 'Z' {
+		return v
+	}
+	return "unknown"
+}
+
+// sanitizeASN accepts a numeric AS number (optionally "AS"-prefixed). A 32-bit
+// ASN is at most 10 digits; anything non-numeric or longer clamps to "unknown".
+func sanitizeASN(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(strings.ToUpper(v), "AS")
+	if v == "" || len(v) > 10 {
+		return "unknown"
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] < '0' || v[i] > '9' {
+			return "unknown"
+		}
+	}
+	return v
 }
 
 var protocolSet = map[string]struct{}{

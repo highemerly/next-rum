@@ -34,7 +34,7 @@ func newTestHandler(t *testing.T) (*Handler, *metrics.Metrics) {
 	}
 	mx := metrics.New()
 	lk := loki.New(loki.Options{}) // disabled (no URL)
-	return NewHandler(loader, mx, lk), mx
+	return NewHandler(loader, mx, lk, Options{}), mx
 }
 
 func post(t *testing.T, h *Handler, body string) *httptest.ResponseRecorder {
@@ -135,6 +135,50 @@ func TestCollectSanitizesUnknownOSBrowser(t *testing.T) {
 	// Unknown OS/browser clamp to "other".
 	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"os": "other", "browser": "other"}); v != 1 {
 		t.Errorf("pageview other/other = %v, want 1", v)
+	}
+}
+
+func TestCollectGeoFromHeaders(t *testing.T) {
+	h, mx := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/collect",
+		strings.NewReader(`{"kind":"navigation","service":"handon","path_group":"web_ui","device":"desktop","nav_type":"navigate"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("CF-IPCountry", "jp")   // lowercase -> normalized to JP
+	req.Header.Set("HAN-CF-ASN", "AS2516") // AS-prefixed -> 2516
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rr.Code)
+	}
+	if v := counterValue(t, mx, "rum_country_total", map[string]string{"service": "handon", "country": "JP"}); v != 1 {
+		t.Errorf("country JP = %v, want 1", v)
+	}
+	if v := counterValue(t, mx, "rum_asn_total", map[string]string{"service": "handon", "asn": "2516"}); v != 1 {
+		t.Errorf("asn 2516 = %v, want 1", v)
+	}
+}
+
+func TestSanitizeCountry(t *testing.T) {
+	cases := map[string]string{
+		"JP": "JP", "jp": "JP", "": "unknown",
+		"XX": "unknown", "T1": "tor", "USA": "unknown", "1A": "unknown",
+	}
+	for in, want := range cases {
+		if got := sanitizeCountry(in); got != want {
+			t.Errorf("sanitizeCountry(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSanitizeASN(t *testing.T) {
+	cases := map[string]string{
+		"2516": "2516", "AS2516": "2516", "as13335": "13335",
+		"": "unknown", "12.3": "unknown", "99999999999": "unknown", "abc": "unknown",
+	}
+	for in, want := range cases {
+		if got := sanitizeASN(in); got != want {
+			t.Errorf("sanitizeASN(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

@@ -42,7 +42,10 @@ func main() {
 	})
 	defer lk.Close()
 
-	collector := collect.NewHandler(loader, mx, lk)
+	collector := collect.NewHandler(loader, mx, lk, collect.Options{
+		CountryHeader: cfg.countryHeader,
+		ASNHeader:     cfg.asnHeader,
+	})
 
 	handler := server.New(server.Options{
 		Config:      loader,
@@ -115,6 +118,8 @@ type envConfig struct {
 	lokiURL        string
 	assetMaxAge    time.Duration
 	reloadInterval time.Duration
+	countryHeader  string
+	asnHeader      string
 }
 
 func loadEnv() envConfig {
@@ -124,6 +129,9 @@ func loadEnv() envConfig {
 		lokiURL:        os.Getenv("LOKI_URL"), // empty disables Loki push
 		assetMaxAge:    getdur("ASSET_MAX_AGE_SECONDS", 300*time.Second),
 		reloadInterval: getdur("CONFIG_RELOAD_SECONDS", 60*time.Second),
+		// Header names carrying the CF-derived geo signals (overridable).
+		countryHeader: getenv("GEO_COUNTRY_HEADER", collect.DefaultCountryHeader),
+		asnHeader:     getenv("GEO_ASN_HEADER", collect.DefaultASNHeader),
 	}
 }
 

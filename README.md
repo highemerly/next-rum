@@ -17,7 +17,9 @@ Section references below (§5, §8, §14, …) point into it.
   `/metrics`, and pushes detailed logs to Loki.
 - Privacy-first: no user/session IDs, cookies, IPs, query strings, or raw UA
   string. Only coarse `device` / `os` / `browser` (no versions) are derived from
-  UA-CH. GPC is honored client-side. See design §5.
+  UA-CH, plus visitor `country` / `asn` read server-side from Cloudflare edge
+  headers (the IP itself is never read or stored). GPC is honored client-side.
+  See design §5.
 
 ### Beacon batching
 
@@ -41,6 +43,17 @@ collector accepts a single event object or an array.
 histograms** to protect their cardinality. They land in Loki and in a dedicated
 counter `rum_pageview_total{service,path_group,device,os,browser,nav_type}`
 (one increment per page load) for distribution panels.
+
+### Country / ASN (Cloudflare edge geo)
+
+The collector reads the visitor `country` (`CF-IPCountry`, a CF default header)
+and `asn` (`HAN-CF-ASN`, injected by a CF Transform Rule) from request headers —
+**Cloudflare resolves geo at the edge and we read only the coarse code; the IP is
+never read or stored.** Both land in Loki and in dedicated counters
+`rum_country_total{service,country}` / `rum_asn_total{service,asn}` (kept separate
+so their large value spaces don't multiply other labels). The header names are
+configurable (`GEO_COUNTRY_HEADER` / `GEO_ASN_HEADER`) so the CF rule can be
+renamed without a rebuild. Setup: `deploy/cloudflare/transform-rules.md`.
 
 ## Layout
 
@@ -125,6 +138,8 @@ switch tabs (or close the page) to flush the final values.
 | `LOKI_URL`              | (empty)                       | empty disables Loki push                 |
 | `ASSET_MAX_AGE_SECONDS` | `300`                         | Cache-Control for static assets          |
 | `CONFIG_RELOAD_SECONDS` | `60`                          | hot-reload interval for `rum-config.json`|
+| `GEO_COUNTRY_HEADER`    | `CF-IPCountry`                | request header carrying the country code |
+| `GEO_ASN_HEADER`        | `HAN-CF-ASN`                  | request header carrying the AS number    |
 
 ## Inject the loader
 

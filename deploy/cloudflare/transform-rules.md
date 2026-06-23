@@ -32,6 +32,61 @@ beacon.js reads `cf-cache` → `cf_cache` label and `cf-colo` → `cf_colo` (Lok
 
 ---
 
+# Visitor geo: country and ASN (rum.piyo.me zone only)
+
+These are read **server-side** by the collector from request headers that
+Cloudflare adds at its edge — the client IP is never sent to or stored by the
+collector. Apply on the **`rum.piyo.me` zone** (where `/collect` is served).
+
+## Country (`CF-IPCountry`) — default header, no rule needed
+
+`CF-IPCountry` (2-letter ISO 3166-1 alpha-2) is added automatically when
+**Network → IP Geolocation** is ON for the zone (default on for proxied zones).
+The collector reads it as `country` (special values: `XX`→`unknown`, `T1`→`tor`).
+
+```bash
+curl -sI https://rum.piyo.me/healthz | grep -i cf-ipcountry  # via the edge
+```
+
+## ASN (`HAN-CF-ASN`) — needs a Transform Rule
+
+The AS number is **not** a default origin header, so inject it.
+Dashboard → Rules → Transform Rules → **Modify Request Header** → Create rule.
+
+- When incoming requests match: `Hostname` equals `rum.piyo.me`
+- Then: **Set dynamic** header
+
+Header name: `HAN-CF-ASN`
+
+Value (dynamic expression):
+
+```
+to_string(ip.src.asnum)
+```
+
+(If `to_string` is rejected by the expression editor, use `concat("", ip.src.asnum)`.)
+
+The collector reads numeric ASN only (any `AS` prefix is stripped; non-numeric →
+`unknown`). AS **organization name** is not available as a Rules field — only via
+a Worker's `request.cf.asOrganization` — so the metric carries the number.
+
+## Header names are configurable
+
+The collector's header names default to `CF-IPCountry` / `HAN-CF-ASN` but are
+overridable via env, so you can rename the CF Transform Rule header later without
+a code change — just keep the two in sync:
+
+```
+GEO_COUNTRY_HEADER=CF-IPCountry
+GEO_ASN_HEADER=HAN-CF-ASN
+```
+
+Metrics produced: `rum_country_total{service,country}` and
+`rum_asn_total{service,asn}` (one increment per page load); `country`/`asn` also
+go to the Loki navigation log line.
+
+---
+
 ## Future Work (Phase 2): NEL / Reporting endpoints
 
 Cloudflare auto-injects its own NEL `report-to`. To collect NEL ourselves, disable

@@ -155,6 +155,26 @@
       "targets": [
         { "expr": "sum by (os)(rate(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{os}}" }
       ]
+    },
+    {
+      "title": "Pageviews by country (top 15)",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        { "expr": "topk(15, sum by (country)(rate(rum_country_total{service=~\"$service\"}[1h])))", "legendFormat": "{{country}}" }
+      ]
+    },
+    {
+      "title": "Pageviews by ASN (top 15)",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        { "expr": "topk(15, sum by (asn)(rate(rum_asn_total{service=~\"$service\"}[1h])))", "legendFormat": "AS{{asn}}" }
+      ]
     }
   ]
 }
