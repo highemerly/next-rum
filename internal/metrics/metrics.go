@@ -37,7 +37,8 @@ type Metrics struct {
 	navResponse *prometheus.HistogramVec
 	navTransfer *prometheus.HistogramVec
 
-	cfCacheTotal *prometheus.CounterVec
+	cfCacheTotal  *prometheus.CounterVec
+	pageviewTotal *prometheus.CounterVec
 
 	receivedTotal  *prometheus.CounterVec
 	parseSeconds   prometheus.Histogram
@@ -45,10 +46,11 @@ type Metrics struct {
 }
 
 var (
-	wvLabels      = []string{"service", "path_group", "rating", "device", "nav_type"}
-	navLabels     = []string{"service", "path_group", "device", "protocol"}
-	navRespLabels = []string{"service", "path_group", "device", "protocol", "cf_cache"}
-	cfCacheLabels = []string{"service", "path_group", "status", "protocol", "device"}
+	wvLabels       = []string{"service", "path_group", "rating", "device", "nav_type"}
+	navLabels      = []string{"service", "path_group", "device", "protocol"}
+	navRespLabels  = []string{"service", "path_group", "device", "protocol", "cf_cache"}
+	cfCacheLabels  = []string{"service", "path_group", "status", "protocol", "device"}
+	pageviewLabels = []string{"service", "path_group", "device", "os", "browser", "nav_type"}
 )
 
 // New builds and registers all collectors.
@@ -90,6 +92,10 @@ func New() *Metrics {
 			Name: "rum_cf_cache_total",
 			Help: "Cloudflare cache status counts",
 		}, cfCacheLabels),
+		pageviewTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_pageview_total",
+			Help: "Page loads by device, OS and browser (one per navigation event)",
+		}, pageviewLabels),
 		receivedTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_collector_received_total",
 			Help: "Collected events by kind and status (ok/parse_error/label_rejected)",
@@ -141,6 +147,12 @@ func (m *Metrics) ObserveNav(l NavLabels, dns, tcp, tls, request, response, tran
 // IncCFCache increments the Cloudflare cache-status counter.
 func (m *Metrics) IncCFCache(service, pathGroup, status, protocol, device string) {
 	m.cfCacheTotal.WithLabelValues(service, pathGroup, status, protocol, device).Inc()
+}
+
+// IncPageview increments the per-page-load counter that carries OS/browser
+// distribution (kept off the histograms to protect their cardinality).
+func (m *Metrics) IncPageview(service, pathGroup, device, os, browser, navType string) {
+	m.pageviewTotal.WithLabelValues(service, pathGroup, device, os, browser, navType).Inc()
 }
 
 // IncReceived records a /collect outcome (status = ok/parse_error/label_rejected).

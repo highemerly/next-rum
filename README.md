@@ -12,11 +12,28 @@ Section references below (§5, §8, §14, …) point into it.
 
 - Serves a one-line loader (`beacon.js`) deployable verbatim on every service —
   service identity and URL grouping come from `rum-config.json`, not the tag.
-- Ingests beacons on `POST /collect`, records bounded-cardinality histograms and
-  counters for VictoriaMetrics to scrape at `/metrics`, and pushes detailed logs
-  to Loki.
-- Privacy-first: no user/session IDs, cookies, IPs, query strings, or raw UA. GPC
-  is honored client-side. See design §5.
+- Ingests beacons on `POST /collect` (single event or a batched array), records
+  bounded-cardinality histograms and counters for VictoriaMetrics to scrape at
+  `/metrics`, and pushes detailed logs to Loki.
+- Privacy-first: no user/session IDs, cookies, IPs, query strings, or raw UA
+  string. Only coarse `device` / `os` / `browser` (no versions) are derived from
+  UA-CH. GPC is honored client-side. See design §5.
+
+### Beacon batching
+
+Web Vitals finalize at different times, so the loader does not POST per metric.
+It buffers everything that finalizes in the first **3s** and sends it as **one**
+`/collect` (a JSON array); metrics that finalize later (LCP on first input,
+INP/CLS at page hide) are sent individually. A `visibilitychange`/`pagehide`
+flush guarantees nothing is lost. The collector accepts both shapes.
+
+### OS / browser
+
+`os` (`windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`) and `browser`
+(`chrome`/`firefox`/`safari`/`edge`/`opera`/…) are kept **off the latency
+histograms** to protect their cardinality. They land in Loki and in a dedicated
+counter `rum_pageview_total{service,path_group,device,os,browser,nav_type}`
+(one increment per page load) for distribution panels.
 
 ## Layout
 

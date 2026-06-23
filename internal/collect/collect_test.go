@@ -105,6 +105,39 @@ func TestCollectUnknownKindParseError(t *testing.T) {
 	}
 }
 
+func TestCollectBatchArray(t *testing.T) {
+	h, mx := newTestHandler(t)
+	// One batched beacon carrying a navigation event and two web_vitals.
+	batch := `[
+	  {"kind":"navigation","service":"handon","path_group":"web_ui","device":"desktop","os":"macos","browser":"chrome","nav_type":"navigate","protocol":"h2","cf_cache":"HIT"},
+	  {"kind":"web_vitals","service":"handon","path_group":"web_ui","name":"FCP","value":800,"rating":"good","device":"desktop","nav_type":"navigate"},
+	  {"kind":"web_vitals","service":"handon","path_group":"web_ui","name":"TTFB","value":120,"rating":"good","device":"desktop","nav_type":"navigate"}
+	]`
+	rr := post(t, h, batch)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rr.Code)
+	}
+	if v := counterValue(t, mx, "rum_collector_received_total", map[string]string{"kind": "navigation", "status": "ok"}); v != 1 {
+		t.Errorf("navigation ok = %v, want 1", v)
+	}
+	if v := counterValue(t, mx, "rum_collector_received_total", map[string]string{"kind": "web_vitals", "status": "ok"}); v != 2 {
+		t.Errorf("web_vitals ok = %v, want 2", v)
+	}
+	// Pageview counter carries OS/browser for the navigation event.
+	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"service": "handon", "os": "macos", "browser": "chrome"}); v != 1 {
+		t.Errorf("pageview macos/chrome = %v, want 1", v)
+	}
+}
+
+func TestCollectSanitizesUnknownOSBrowser(t *testing.T) {
+	h, mx := newTestHandler(t)
+	post(t, h, `{"kind":"navigation","service":"handon","path_group":"web_ui","device":"desktop","os":"BeOS","browser":"NetscapeNavigator","nav_type":"navigate"}`)
+	// Unknown OS/browser clamp to "other".
+	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"os": "other", "browser": "other"}); v != 1 {
+		t.Errorf("pageview other/other = %v, want 1", v)
+	}
+}
+
 func TestCollectRejectsGET(t *testing.T) {
 	h, _ := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/collect", nil)

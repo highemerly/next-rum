@@ -4,6 +4,7 @@
 package collect
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 	"github.com/highemerly/rum-collector/internal/metrics"
 )
 
-const maxBodyBytes = 16 << 10 // 16 KiB; a single event is tiny
+const maxBodyBytes = 64 << 10 // 64 KiB; a batched beacon holds a handful of events
 
 // event is the union of fields beacon.js may send for either kind.
 type event struct {
@@ -24,6 +25,8 @@ type event struct {
 	PathGroup string `json:"path_group"`
 	Path      string `json:"path"`
 	Device    string `json:"device"`
+	OS        string `json:"os"`
+	Browser   string `json:"browser"`
 	Conn      string `json:"conn"`
 	TS        int64  `json:"ts"` // unix milliseconds
 	NavType   string `json:"nav_type"`
@@ -75,18 +78,48 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var ev event
-	if err := json.Unmarshal(body, &ev); err != nil {
+	// A batched beacon is a JSON array; a single event is a JSON object.
+	events, err := decodeEvents(body)
+	if err != nil {
 		h.mx.IncReceived("unknown", "parse_error")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	cfg := h.cfg.Get()
+	for i := range events {
+		h.record(cfg, events[i])
+	}
+	h.mx.ObserveParse(time.Since(start).Seconds())
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// decodeEvents accepts either a single event object or an array of events.
+func decodeEvents(body []byte) ([]event, error) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		var events []event
+		if err := json.Unmarshal(trimmed, &events); err != nil {
+			return nil, err
+		}
+		return events, nil
+	}
+	var ev event
+	if err := json.Unmarshal(trimmed, &ev); err != nil {
+		return nil, err
+	}
+	return []event{ev}, nil
+}
+
+// record validates and records one event, updating the intake meta-counter.
+func (h *Handler) record(cfg *config.Config, ev event) {
 	service, svcRejected := cfg.ValidateService(ev.Service)
 	pathGroup, pgRejected := cfg.ValidatePathGroup(service, ev.PathGroup)
 	device := sanitizeDevice(ev.Device)
 	navType := sanitizeNavType(ev.NavType)
+	os := sanitizeOS(ev.OS)
+	browser := sanitizeBrowser(ev.Browser)
 
 	status := "ok"
 	if svcRejected || pgRejected {
@@ -113,7 +146,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"value": ev.Value, "rating": rating,
 			"path_group": pathGroup, "path": ev.Path,
 			"metric_id": ev.MetricID, "nav_type": navType,
-			"device": device, "conn": ev.Conn,
+			"device": device, "os": os, "browser": browser, "conn": ev.Conn,
 		})
 
 	case "navigation":
@@ -127,6 +160,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			CFCache:   cfCache,
 		}, ev.DNSMs, ev.TCPMs, ev.TLSMs, ev.RequestMs, ev.ResponseMs, ev.TransferSize)
 		h.mx.IncCFCache(service, pathGroup, cfCache, protocol, device)
+		// One navigation == one page load: carry OS/browser distribution here.
+		h.mx.IncPageview(service, pathGroup, device, os, browser, navType)
 		h.pushLoki(service, "navigation", ev.TS, map[string]any{
 			"service": service, "kind": "navigation",
 			"path_group": pathGroup, "path": ev.Path,
@@ -135,7 +170,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"transfer_size": ev.TransferSize, "encoded_size": ev.EncodedSize,
 			"decoded_size": ev.DecodedSize, "protocol": protocol,
 			"cf_cache": cfCache, "cf_colo": ev.CFColo,
-			"device": device, "conn": ev.Conn,
+			"device": device, "os": os, "browser": browser, "conn": ev.Conn,
 		})
 
 	default:
@@ -146,9 +181,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		status = "parse_error"
 	}
 	h.mx.IncReceived(eventKind(ev.Kind), status)
-	h.mx.ObserveParse(time.Since(start).Seconds())
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) pushLoki(service, kind string, tsMs int64, fields map[string]any) {
@@ -197,6 +229,30 @@ var ratingSet = map[string]struct{}{
 }
 
 func sanitizeRating(v string) string { return inSet(v, ratingSet, "unknown") }
+
+var osSet = map[string]struct{}{
+	"windows": {}, "macos": {}, "ios": {}, "android": {},
+	"linux": {}, "chromeos": {}, "other": {},
+}
+
+func sanitizeOS(v string) string {
+	if v == "" {
+		return "unknown"
+	}
+	return inSet(strings.ToLower(v), osSet, "other")
+}
+
+var browserSet = map[string]struct{}{
+	"chrome": {}, "chromium": {}, "edge": {}, "firefox": {},
+	"safari": {}, "opera": {}, "brave": {}, "samsung": {}, "other": {},
+}
+
+func sanitizeBrowser(v string) string {
+	if v == "" {
+		return "unknown"
+	}
+	return inSet(strings.ToLower(v), browserSet, "other")
+}
 
 var protocolSet = map[string]struct{}{
 	"h2": {}, "h3": {}, "http/1.1": {}, "http/1.0": {}, "h2c": {}, "": {},

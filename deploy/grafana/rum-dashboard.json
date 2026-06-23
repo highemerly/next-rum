@@ -135,6 +135,26 @@
       "targets": [
         { "expr": "sum by (kind, status)(rate(rum_collector_received_total[5m]))", "legendFormat": "{{kind}} {{status}}" }
       ]
+    },
+    {
+      "title": "Pageviews by browser",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        { "expr": "sum by (browser)(rate(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{browser}}" }
+      ]
+    },
+    {
+      "title": "Pageviews by OS",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        { "expr": "sum by (os)(rate(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{os}}" }
+      ]
     }
   ]
 }

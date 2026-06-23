@@ -85,6 +85,48 @@
     return (navigator.connection && navigator.connection.effectiveType) || '';
   }
 
+  // Coarse OS name (no version). Prefers the low-entropy UA-CH platform hint,
+  // falls back to UA parsing for browsers without userAgentData (Firefox/Safari).
+  function getOS() {
+    var uaData = navigator.userAgentData;
+    var p = (uaData && uaData.platform) ? uaData.platform.toLowerCase() : '';
+    if (p.indexOf('win') >= 0) return 'windows';
+    if (p.indexOf('mac') >= 0) return 'macos';
+    if (p.indexOf('android') >= 0) return 'android';
+    if (p.indexOf('chrome os') >= 0 || p.indexOf('cros') >= 0) return 'chromeos';
+    if (p.indexOf('linux') >= 0) return 'linux';
+    var ua = navigator.userAgent;
+    if (/Windows/.test(ua)) return 'windows';
+    if (/Android/.test(ua)) return 'android';
+    if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
+    if (/Mac OS X|Macintosh/.test(ua)) return 'macos';
+    if (/CrOS/.test(ua)) return 'chromeos';
+    if (/Linux/.test(ua)) return 'linux';
+    return 'other';
+  }
+
+  // Coarse browser name (no version). Prefers UA-CH brands (low entropy), falls
+  // back to UA parsing. Order matters: check derivatives before their base.
+  function getBrowser() {
+    var uaData = navigator.userAgentData;
+    if (uaData && uaData.brands) {
+      var brands = uaData.brands.map(function (b) { return b.brand; });
+      if (brands.indexOf('Microsoft Edge') >= 0) return 'edge';
+      if (brands.indexOf('Opera') >= 0 || brands.indexOf('Opera GX') >= 0) return 'opera';
+      if (brands.indexOf('Brave') >= 0) return 'brave';
+      if (brands.indexOf('Samsung Internet') >= 0) return 'samsung';
+      if (brands.indexOf('Google Chrome') >= 0) return 'chrome';
+      if (brands.indexOf('Chromium') >= 0) return 'chromium';
+    }
+    var ua = navigator.userAgent;
+    if (/Edg\//.test(ua)) return 'edge';
+    if (/OPR\/|Opera/.test(ua)) return 'opera';
+    if (/Firefox\//.test(ua)) return 'firefox';
+    if (/Chrome\//.test(ua)) return 'chrome';
+    if (/Safari\//.test(ua) && /Version\//.test(ua)) return 'safari';
+    return 'other';
+  }
+
   function post(obj) {
     try {
       var blob = new Blob([JSON.stringify(obj)], { type: 'text/plain' }); // avoid CORS preflight
@@ -102,16 +144,41 @@
     var path_group = resolvePathGroup(cfg, service);
     var navInfo    = getNavTimings();
     var cfInfo     = getCFInfo();
+    var device     = getDevice();
+    var os         = getOS();
+    var browser    = getBrowser();
 
     function base() {
       return {
         service: service,
         path_group: path_group,
         path: location.pathname,   // Loki only (never a VM label)
-        device: getDevice(),
+        device: device,
+        os: os,
+        browser: browser,
         conn: getConnection(),
         ts: Date.now()
       };
+    }
+
+    // ---- batching ----
+    // Metrics finalize at different times (FCP/TTFB early; LCP on first input;
+    // INP/CLS at page hide). Buffer everything that finalizes within the first
+    // WINDOW_MS and send it as ONE beacon; send anything later individually.
+    // Always flush on hide/unload so nothing is lost and late metrics still go.
+    var WINDOW_MS = 3000;
+    var queue = [];
+    var flushed = false;
+
+    function flush() {
+      flushed = true;
+      if (!queue.length) return;
+      var batch = queue.splice(0, queue.length);
+      post(batch.length === 1 ? batch[0] : batch); // server accepts object or array
+    }
+    function enqueueOrSend(obj) {
+      if (flushed) post(obj);
+      else queue.push(obj);
     }
 
     function send(metric) {
@@ -122,16 +189,22 @@
       b.rating = metric.rating;      // good / needs-improvement / poor
       b.metric_id = metric.id;       // Loki only
       b.nav_type = navInfo.nav_type;
-      post(b);
+      enqueueOrSend(b);
     }
 
     m.onLCP(send); m.onINP(send); m.onCLS(send); m.onFCP(send); m.onTTFB(send);
 
-    // Navigation timing + CF cache, sent once.
+    // Navigation timing + CF cache, queued once.
     var navEvent = base();
     navEvent.kind = 'navigation';
     for (var k in navInfo) navEvent[k] = navInfo[k];
     for (var c in cfInfo) navEvent[c] = cfInfo[c];
-    post(navEvent);
+    enqueueOrSend(navEvent);
+
+    setTimeout(flush, WINDOW_MS);
+    addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') flush();
+    });
+    addEventListener('pagehide', flush);
   }).catch(function () { /* measurement failure is silent: never affect the page */ });
 })();
