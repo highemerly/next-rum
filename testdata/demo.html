@@ -20,11 +20,11 @@
 <body>
   <h1>RUM local demo</h1>
   <p>
-    This page loads <code>beacon.js</code> from the local collector. Metrics that
-    finalize within the first 3s (navigation, FCP, TTFB) are sent as
-    <strong>one batched</strong> <code>/collect</code>; LCP finalizes on your first
-    interaction and INP/CLS at page hide, so those are sent afterwards. Click the
-    button (finalizes LCP), then switch or close the tab (flushes INP/CLS).
+    This page loads <code>beacon.js</code> from the local collector. It sends at
+    most two batched <code>/collect</code> beacons: a <strong>load batch</strong>
+    at 3s (navigation + TTFB + FCP) and a <strong>tail batch</strong> at page hide
+    (LCP + INP + CLS). Click the button (creates an interaction / finalizes LCP),
+    then switch or close the tab to flush the tail batch.
   </p>
 
   <!-- A reasonably large LCP candidate so LCP has something to report. -->

@@ -22,10 +22,17 @@ Section references below (§5, §8, §14, …) point into it.
 ### Beacon batching
 
 Web Vitals finalize at different times, so the loader does not POST per metric.
-It buffers everything that finalizes in the first **3s** and sends it as **one**
-`/collect` (a JSON array); metrics that finalize later (LCP on first input,
-INP/CLS at page hide) are sent individually. A `visibilitychange`/`pagehide`
-flush guarantees nothing is lost. The collector accepts both shapes.
+It coalesces into at most **two** `/collect` beacons (each a JSON array):
+
+1. a **load batch** flushed at **3s** — `navigation` + `TTFB` + `FCP`, the
+   metrics that finalize during load;
+2. a **tail batch** flushed when the page is hidden/unloaded
+   (`visibilitychange`→hidden / `pagehide`) — `LCP` (finalizes on first input),
+   `INP`, `CLS`.
+
+Buffering the tail until hide minimizes requests; a metric that never reaches the
+server (e.g. the tab crashes before hide) is acceptable loss for RUM. The
+collector accepts a single event object or an array.
 
 ### OS / browser
 

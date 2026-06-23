@@ -162,23 +162,23 @@
     }
 
     // ---- batching ----
-    // Metrics finalize at different times (FCP/TTFB early; LCP on first input;
-    // INP/CLS at page hide). Buffer everything that finalizes within the first
-    // WINDOW_MS and send it as ONE beacon; send anything later individually.
-    // Always flush on hide/unload so nothing is lost and late metrics still go.
+    // Metrics finalize at different lifecycle points (FCP/TTFB early; LCP on the
+    // first input; INP/CLS at page hide). We coalesce into at most two beacons:
+    //   1) a "load" batch flushed at WINDOW_MS  -> navigation + TTFB + FCP, ...
+    //   2) a "tail" batch flushed at page hide   -> LCP + INP + CLS, ...
+    // Buffering the tail until hide minimizes requests. visibilitychange(hidden)/
+    // pagehide is the last reliable moment to send; a metric that never reaches
+    // the server (e.g. the tab crashes before hide) is acceptable loss for RUM.
     var WINDOW_MS = 3000;
     var queue = [];
-    var flushed = false;
 
+    // flush drains whatever has finalized so far into a single beacon. It is
+    // called at the load window and again at hide; splice empties the queue so
+    // the two flushes never resend the same event.
     function flush() {
-      flushed = true;
       if (!queue.length) return;
       var batch = queue.splice(0, queue.length);
       post(batch.length === 1 ? batch[0] : batch); // server accepts object or array
-    }
-    function enqueueOrSend(obj) {
-      if (flushed) post(obj);
-      else queue.push(obj);
     }
 
     function send(metric) {
@@ -189,7 +189,7 @@
       b.rating = metric.rating;      // good / needs-improvement / poor
       b.metric_id = metric.id;       // Loki only
       b.nav_type = navInfo.nav_type;
-      enqueueOrSend(b);
+      queue.push(b);
     }
 
     m.onLCP(send); m.onINP(send); m.onCLS(send); m.onFCP(send); m.onTTFB(send);
@@ -199,11 +199,11 @@
     navEvent.kind = 'navigation';
     for (var k in navInfo) navEvent[k] = navInfo[k];
     for (var c in cfInfo) navEvent[c] = cfInfo[c];
-    enqueueOrSend(navEvent);
+    queue.push(navEvent);
 
-    setTimeout(flush, WINDOW_MS);
+    setTimeout(flush, WINDOW_MS); // 1) load batch
     addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'hidden') flush();
+      if (document.visibilityState === 'hidden') flush(); // 2) tail batch
     });
     addEventListener('pagehide', flush);
   }).catch(function () { /* measurement failure is silent: never affect the page */ });
