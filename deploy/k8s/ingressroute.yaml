@@ -1,0 +1,20 @@
+# Public routes for rum.piyo.me. /metrics is intentionally NOT routed here so it
+# stays internal-only (scraped via VMServiceScrape against the Service).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: rum-collector
+  namespace: rum
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: >-
+        Host(`rum.piyo.me`) &&
+        (Path(`/beacon.js`) || Path(`/web-vitals.js`) ||
+         Path(`/rum-config.json`) || Path(`/collect`) || Path(`/healthz`))
+      kind: Rule
+      services:
+        - name: rum-collector
+          port: 8080
+  tls:
+    certResolver: letsencrypt

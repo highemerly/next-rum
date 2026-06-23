@@ -1,0 +1,140 @@
+{
+  "title": "RUM — Real User Monitoring",
+  "uid": "rum-overview",
+  "schemaVersion": 39,
+  "editable": true,
+  "tags": ["rum", "web-vitals"],
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": "${datasource}",
+        "query": "label_values(web_vitals_lcp_milliseconds_count, service)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "LCP p75 by service",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\"}[1h])))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "title": "LCP p75 by path_group",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum by (service, path_group, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\"}[1h])))",
+          "legendFormat": "{{service}}/{{path_group}}"
+        }
+      ]
+    },
+    {
+      "title": "INP / CLS / FCP / TTFB p75 by service",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "INP {{service}}" },
+        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_fcp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "FCP {{service}}" },
+        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_ttfb_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "TTFB {{service}}" }
+      ]
+    },
+    {
+      "title": "rating=poor ratio (LCP) by service",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "targets": [
+        {
+          "expr": "sum by (service)(rate(web_vitals_lcp_milliseconds_count{rating=\"poor\",service=~\"$service\"}[1h])) / sum by (service)(rate(web_vitals_lcp_milliseconds_count{service=~\"$service\"}[1h]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "title": "LCP p75 — mobile vs desktop",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum by (service, device, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\"}[1h])))",
+          "legendFormat": "{{service}} {{device}}"
+        }
+      ]
+    },
+    {
+      "title": "Cloudflare cache HIT rate by service",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "targets": [
+        {
+          "expr": "sum by (service)(rate(rum_cf_cache_total{status=\"HIT\",service=~\"$service\"}[1h])) / sum by (service)(rate(rum_cf_cache_total{service=~\"$service\"}[1h]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "title": "Transfer time p75 — cache HIT vs MISS",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.75, sum by (cf_cache, le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\"}[1h])))",
+          "legendFormat": "{{cf_cache}}"
+        }
+      ]
+    },
+    {
+      "title": "HTML transfer size p50/p75/p95",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (service, le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p50 {{service}}" },
+        { "expr": "histogram_quantile(0.75, sum by (service, le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p75 {{service}}" },
+        { "expr": "histogram_quantile(0.95, sum by (service, le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p95 {{service}}" }
+      ]
+    },
+    {
+      "title": "Collector intake by status",
+      "type": "timeseries",
+      "datasource": "${datasource}",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "targets": [
+        { "expr": "sum by (kind, status)(rate(rum_collector_received_total[5m]))", "legendFormat": "{{kind}} {{status}}" }
+      ]
+    }
+  ]
+}

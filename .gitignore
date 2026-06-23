@@ -1,0 +1,19 @@
+# Binaries
+/bin/
+/rum-collector
+*.exe
+
+# Go
+*.test
+*.out
+coverage.*
+
+# Node / Cloudflare worker
+node_modules/
+.wrangler/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

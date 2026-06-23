@@ -1,0 +1,13 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: rum-collector
+  namespace: rum
+spec:
+  selector:
+    matchLabels:
+      app: rum-collector
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s

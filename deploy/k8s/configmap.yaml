@@ -1,0 +1,60 @@
+# Single source of truth for service identifiers and URL path groups.
+# Edit and `flux reconcile` (or kubectl apply) to roll out new grouping without
+# rebuilding the binary. The collector hot-reloads this file every CONFIG_RELOAD_SECONDS.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rum-config
+  namespace: rum
+data:
+  rum-config.json: |
+    {
+      "services": {
+        "handon.club":      "handon",
+        "dev.handon.club":  "handon-dev",
+        "hosteka.poyo.me":  "hosteka",
+        "mi.hiyoko.club":   "misskey",
+        "pic.handon.club":  "pic",
+        "anypost.dev":      "anypost"
+      },
+      "default_service": "unknown",
+      "default_path_group": "other",
+      "path_groups": {
+        "handon": [
+          { "pattern": "/",          "group": "home" },
+          { "pattern": "/web",       "group": "web_ui" },
+          { "pattern": "/web/**",    "group": "web_ui" },
+          { "pattern": "/@*",        "group": "profile" },
+          { "pattern": "/@*/**",     "group": "status" },
+          { "pattern": "/tags/**",   "group": "tag" },
+          { "pattern": "/about**",   "group": "about" },
+          { "pattern": "/explore**", "group": "explore" },
+          { "pattern": "/public**",  "group": "public_tl" }
+        ],
+        "handon-dev": [
+          { "pattern": "/",       "group": "home" },
+          { "pattern": "/web/**", "group": "web_ui" }
+        ],
+        "misskey": [
+          { "pattern": "/",            "group": "home" },
+          { "pattern": "/@*",          "group": "profile" },
+          { "pattern": "/notes/**",    "group": "note" },
+          { "pattern": "/channels/**", "group": "channel" }
+        ],
+        "pic": [
+          { "pattern": "/",     "group": "home" },
+          { "pattern": "/p/**", "group": "photo" },
+          { "pattern": "/u/**", "group": "user" }
+        ],
+        "anypost": [
+          { "pattern": "/",        "group": "home" },
+          { "pattern": "/posts/**", "group": "post" }
+        ],
+        "hosteka": [
+          { "pattern": "/", "group": "home" }
+        ],
+        "*": [
+          { "pattern": "/", "group": "home" }
+        ]
+      }
+    }

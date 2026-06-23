@@ -1,0 +1,13 @@
+# Cloudflare Worker that injects beacon.js into mi.hiyoko.club (Misskey) HTML.
+# Routes are scoped to HTML pages only so the Worker is not billed on API/file/
+# streaming requests (which never match these patterns). See design §3-3.
+name = "rum-injector-misskey"
+main = "src/index.js"
+compatibility_date = "2026-04-01"
+
+routes = [
+  { pattern = "mi.hiyoko.club/",           zone_name = "hiyoko.club" },
+  { pattern = "mi.hiyoko.club/@*",         zone_name = "hiyoko.club" },
+  { pattern = "mi.hiyoko.club/notes/*",    zone_name = "hiyoko.club" },
+  { pattern = "mi.hiyoko.club/channels/*", zone_name = "hiyoko.club" },
+]

@@ -1,0 +1,13 @@
+{
+  "name": "rum-injector-misskey",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that injects the RUM loader into Misskey HTML",
+  "scripts": {
+    "dev": "wrangler dev --remote",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

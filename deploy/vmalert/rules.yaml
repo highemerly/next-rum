@@ -1,0 +1,76 @@
+# vmalert rules for RUM (design §11). Notifications route to the existing
+# Discord/Mastodon channels via Alertmanager.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: rum-alerts
+  namespace: rum
+spec:
+  groups:
+    - name: rum.cwv
+      interval: 1m
+      rules:
+        - alert: RUMLcpP75High
+          expr: |
+            histogram_quantile(0.75,
+              sum by (service, le) (rate(web_vitals_lcp_milliseconds_bucket[1h]))) > 4000
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "LCP p75 > 4s on {{ $labels.service }}"
+            description: "LCP p75 has exceeded 4000ms for 15m on {{ $labels.service }}."
+
+        - alert: RUMTtfbP75High
+          expr: |
+            histogram_quantile(0.75,
+              sum by (service, le) (rate(web_vitals_ttfb_milliseconds_bucket[1h]))) > 1500
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "TTFB p75 > 1.5s on {{ $labels.service }}"
+
+    - name: rum.cache
+      interval: 5m
+      rules:
+        - alert: RUMCacheHitRateDrop
+          # Hit rate dropped more than 20 percentage points vs the same hour last week.
+          expr: |
+            (
+              sum by (service)(rate(rum_cf_cache_total{status="HIT"}[1h]))
+              / sum by (service)(rate(rum_cf_cache_total[1h]))
+            )
+            <
+            (
+              sum by (service)(rate(rum_cf_cache_total{status="HIT"}[1h] offset 1w))
+              / sum by (service)(rate(rum_cf_cache_total[1h] offset 1w))
+            ) - 0.20
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cloudflare cache hit rate dropped >20pt on {{ $labels.service }}"
+
+    - name: rum.collector
+      interval: 1m
+      rules:
+        - alert: RUMCollectorRejectRateHigh
+          # Sustained parse_error / label_rejected suggests a config drift or attack.
+          expr: |
+            sum(rate(rum_collector_received_total{status=~"parse_error|label_rejected"}[5m]))
+            / sum(rate(rum_collector_received_total[5m])) > 0.01
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "RUM collector reject rate > 1%"
+            description: "parse_error/label_rejected exceeds 1% — check rum-config.json or for abuse."
+
+        - alert: RUMCollectorLokiPushErrors
+          expr: increase(rum_collector_loki_push_errors_total[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "RUM collector failing to push to Loki"

@@ -1,0 +1,72 @@
+# Traefik HTML-rewrite injection for Mastodon (handon.club), which has no admin
+# JS-injection feature and must not be forked.
+#
+# IMPORTANT prerequisites (see design §3-2):
+#   1. Enable the rewrite-body plugin in Traefik STATIC config:
+#        experimental:
+#          plugins:
+#            rewritebody:
+#              moduleName: github.com/traefik/plugin-rewritebody
+#              version: v0.3.1
+#   2. rewriteBody cannot match `</head>` through gzip/br. Force identity encoding
+#      to the upstream first (rum-accept-identity), rewrite, then let Traefik
+#      re-compress via its own `compress` middleware.
+#   3. Apply only to text/html — never corrupt ActivityPub (application/activity+json).
+#      Verify: curl -H "Accept: application/activity+json" https://handon.club/@user
+#
+# Chain order on the IngressRoute: rum-accept-identity -> rum-inject -> compress
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rum-accept-identity
+  namespace: handon
+spec:
+  headers:
+    customRequestHeaders:
+      Accept-Encoding: identity
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rum-inject
+  namespace: handon
+spec:
+  plugin:
+    rewritebody:
+      # Insert the loader immediately before </head>. lastModified keeps Traefik
+      # from rewriting an out-of-date Last-Modified for the transformed body.
+      lastModified: true
+      rewrites:
+        - regex: "</head>"
+          replacement: '<script async src="https://rum.piyo.me/beacon.js"></script></head>'
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rum-compress
+  namespace: handon
+spec:
+  compress: {}
+---
+# Example: attach the chain to the Mastodon IngressRoute. Adjust to your existing
+# handon IngressRoute; the key is the middlewares order.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: handon-web
+  namespace: handon
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`handon.club`)
+      kind: Rule
+      middlewares:
+        - name: rum-accept-identity
+        - name: rum-inject
+        - name: rum-compress
+      services:
+        - name: mastodon-web
+          port: 3000
+  tls:
+    certResolver: letsencrypt
