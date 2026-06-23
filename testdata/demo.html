@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RUM local demo</title>
+
+  <!-- RUM loader. Points at the local collector (:8080). beacon.js derives the
+       collector origin from this src, so /collect, /rum-config.json and
+       /web-vitals.js are all fetched from http://localhost:8080. -->
+  <script async src="http://localhost:8080/beacon.js"></script>
+
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 3rem auto; line-height: 1.6; }
+    img { max-width: 100%; height: auto; border-radius: 8px; }
+    button { font-size: 1rem; padding: .6rem 1rem; margin-top: 1rem; cursor: pointer; }
+    code { background: #f0f0f0; padding: .1rem .3rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>RUM local demo</h1>
+  <p>
+    This page loads <code>beacon.js</code> from the local collector. On load it
+    measures <strong>FCP / LCP / TTFB</strong> and sends a <strong>navigation</strong>
+    event; click the button to generate an <strong>INP</strong> interaction.
+  </p>
+
+  <!-- A reasonably large LCP candidate so LCP has something to report. -->
+  <img src="https://picsum.photos/seed/rum/640/360" alt="LCP candidate image" width="640" height="360">
+
+  <button id="work">Click me (generate INP)</button>
+  <p id="out"></p>
+
+  <script>
+    // Block the main thread briefly so INP has a measurable value.
+    document.getElementById('work').addEventListener('click', function () {
+      var start = performance.now();
+      while (performance.now() - start < 120) { /* busy wait ~120ms */ }
+      document.getElementById('out').textContent =
+        'Did some work. Open DevTools > Network and look for /collect (kind=web_vitals name=INP).';
+    });
+  </script>
+
+  <hr>
+  <p>
+    Verify in DevTools → Network: one <code>/rum-config.json</code> fetch, one
+    <code>/web-vitals.js</code>, and several <code>/collect</code> beacons
+    (navigation + web_vitals). Then check
+    <code>http://localhost:8080/metrics</code>.
+  </p>
+</body>
+</html>

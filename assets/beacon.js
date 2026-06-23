@@ -9,7 +9,12 @@
   // document.currentScript is only valid during initial synchronous execution.
   var SELF = document.currentScript;
 
-  var ORIGIN      = 'https://rum.piyo.me';
+  // Derive the collector origin from this script's own URL so the same file works
+  // in production (https://rum.piyo.me/beacon.js) and locally
+  // (http://localhost:8080/beacon.js). Falls back to the production origin.
+  var ORIGIN = (function () {
+    try { return new URL(SELF.src).origin; } catch (e) { return 'https://rum.piyo.me'; }
+  })();
   var CONFIG_URL  = ORIGIN + '/rum-config.json';
   var VITALS_URL  = ORIGIN + '/web-vitals.js';
   var COLLECT_URL = ORIGIN + '/collect';

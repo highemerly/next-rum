@@ -69,6 +69,29 @@ curl -s localhost:8080/metrics | grep web_vitals_lcp
 go test ./...
 ```
 
+### Local end-to-end in a real browser
+
+`beacon.js` derives the collector origin from its own `src`, so the same file
+works locally. No Loki needed (`LOKI_URL` unset disables push).
+
+```bash
+# 1. Collector on :8080 with a dev config that maps localhost -> "dev"
+CONFIG_PATH=testdata/rum-config.dev.json LISTEN_ADDR=:8080 go run ./cmd/rum-collector
+
+# 2. Serve the demo page on :8000 (separate shell). It loads
+#    http://localhost:8080/beacon.js and needs an http origin (not file://).
+cd testdata && python3 -m http.server 8000
+
+# 3. Open http://localhost:8000/demo.html in Chrome.
+#    DevTools > Network: one /rum-config.json, one /web-vitals.js, and several
+#    /collect beacons (navigation + web_vitals: LCP/FCP/TTFB; click the button
+#    for INP). Then check the metrics:
+curl -s http://localhost:8080/metrics | grep 'service="dev"'
+```
+
+CLS/LCP/INP report on real interaction and tab-hide, so click the button and
+switch tabs (or close the page) to flush the final values.
+
 ### Environment
 
 | Var                     | Default                       | Notes                                    |

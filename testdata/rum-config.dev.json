@@ -1,0 +1,17 @@
+{
+  "services": {
+    "localhost":  "dev",
+    "127.0.0.1":  "dev"
+  },
+  "default_service": "unknown",
+  "default_path_group": "other",
+  "path_groups": {
+    "dev": [
+      { "pattern": "/",          "group": "home" },
+      { "pattern": "/demo.html", "group": "demo" }
+    ],
+    "*": [
+      { "pattern": "/", "group": "home" }
+    ]
+  }
+}
