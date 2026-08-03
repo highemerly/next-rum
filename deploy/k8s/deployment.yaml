@@ -1,10 +1,16 @@
+# rum-collector Deployment + Service (本番環境)
+# image 行は GitHub Actions (docker-build.yml) が sed で書き換える。書式を変えないこと。
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rum-collector
-  namespace: rum
+  namespace: rum-prd
   labels:
     app: rum-collector
+    app.kubernetes.io/name: rum-collector
+    app.kubernetes.io/component: collector
+    environment: production
 spec:
   replicas: 2
   selector:
@@ -14,28 +20,33 @@ spec:
     metadata:
       labels:
         app: rum-collector
+        app.kubernetes.io/name: rum-collector
+        app.kubernetes.io/component: collector
     spec:
       securityContext:
         runAsNonRoot: true
       containers:
         - name: rum-collector
-          image: ghcr.io/highemerly/rum-collector:latest
+          image: ghcr.io/highemerly/rum-collector:0.1.0
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
+              protocol: TCP
           env:
             - name: LISTEN_ADDR
               value: ":8080"
             - name: CONFIG_PATH
               value: /etc/rum/rum-config.json
+            # Loki は gateway 無効の SingleBinary 構成。Fluent Bit と同じ宛先を使う。
             - name: LOKI_URL
-              value: http://loki-gateway.monitoring.svc:80/loki/api/v1/push
+              value: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
             - name: ASSET_MAX_AGE_SECONDS
               value: "300"
             - name: CONFIG_RELOAD_SECONDS
               value: "60"
-            # CF-derived geo signal header names (keep in sync with the CF
-            # Transform Rule; rename here without a rebuild).
+            # CF 由来の geo シグナルのヘッダ名（CF Transform Rule と揃えること。
+            # 変更時はここだけ直せばよく、再ビルドは不要）。
             - name: GEO_COUNTRY_HEADER
               value: "CF-IPCountry"
             - name: GEO_ASN_HEADER
@@ -50,15 +61,17 @@ spec:
               port: http
             initialDelaySeconds: 2
             periodSeconds: 10
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 20
+            failureThreshold: 3
           resources:
             requests:
-              cpu: 50m
+              cpu: 20m
               memory: 64Mi
             limits:
               cpu: 500m
@@ -73,11 +86,32 @@ spec:
           configMap:
             name: rum-config
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rum-collector
+  namespace: rum-prd
+  labels:
+    app: rum-collector
+    app.kubernetes.io/name: rum-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: rum-collector
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: rum-collector
-  namespace: rum
+  namespace: rum-prd
+  labels:
+    app: rum-collector
+    app.kubernetes.io/name: rum-collector
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

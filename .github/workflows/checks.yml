@@ -1,0 +1,43 @@
+name: Checks
+
+# gofmt / go vet / go test を回す再利用可能ワークフロー。
+# ci.yml（ブランチ push）と docker-build.yml（タグ push でビルドと並走）の両方から呼ぶ。
+# CI ステップの単一の定義元。
+on:
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # 整形漏れは差分として出す（gofmt -l は非整形ファイル名を列挙するだけで
+      # 終了コードが 0 なので、出力が空でないことを明示的に失敗にする）。
+      - name: Format (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed for:"
+            echo "$unformatted"
+            gofmt -d .
+            exit 1
+          fi
+
+      # 先行ステップが落ちても vet / test まで走らせ、1 回の実行で全問題を出す。
+      - name: Vet
+        if: ${{ !cancelled() }}
+        run: go vet ./...
+
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: go test -race ./...

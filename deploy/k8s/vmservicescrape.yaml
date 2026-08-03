@@ -1,8 +1,14 @@
+# VMAgent は selectAllByDefault: true なので、この VMServiceScrape を作るだけで拾われる。
+---
 apiVersion: operator.victoriametrics.com/v1beta1
 kind: VMServiceScrape
 metadata:
   name: rum-collector
-  namespace: rum
+  namespace: rum-prd
+  labels:
+    app: rum-collector
+    app.kubernetes.io/name: rum-collector
+    environment: production
 spec:
   selector:
     matchLabels:

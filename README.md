@@ -71,7 +71,7 @@ internal/
   server/                routes, CORS, embedded-asset serving
 embed.go                 //go:embed of assets into the binary
 deploy/
-  k8s/                   Namespace, ConfigMap, Deployment+HPA, Service, IngressRoute, VMServiceScrape
+  k8s/                   manifests for k8sg1-repo manifests/rum/prd/ (+ setup runbook)
   traefik/               rewriteBody injection middleware (Mastodon/handon.club)
   cloudflare-worker/     HTMLRewriter injection (Misskey/mi.hiyoko.club)
   cloudflare/            Transform Rules for Server-Timing (cache visibility)
@@ -155,10 +155,28 @@ One line, identical on every service:
 - Every zone: add the Server-Timing Transform Rule (`deploy/cloudflare/`) so cache
   status is visible to the browser.
 
-## Build the image
+## Release / deploy
+
+Tag-driven, same flow as the other services (movapic-neo / nmd):
 
 ```bash
-docker build -t ghcr.io/highemerly/rum-collector:latest .
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+`.github/workflows/docker-build.yml` runs `checks` (gofmt/vet/test) and
+`build-and-push` (ghcr.io, `linux/amd64`) in parallel; when both are green it
+opens a PR against `highemerly/k8sg1-repo` bumping the `image:` line in
+`manifests/rum/prd/deployment.yaml`. Merging that PR lets Flux roll it out.
+
+Branch pushes run `ci.yml` → the same `checks.yml`, so CI never runs twice.
+
+First-time cluster setup (namespace, cert, Flux Kustomization, DNS, `K8SG1_PAT`)
+and the post-rollout verification runbook: **[deploy/k8s/README.md](deploy/k8s/README.md)**.
+
+Local image build (arm64 Mac → amd64 node needs the platform flag):
+
+```bash
+docker build --platform linux/amd64 -t ghcr.io/highemerly/rum-collector:dev .
 ```
 
 ## Roadmap

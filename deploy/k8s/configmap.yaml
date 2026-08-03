@@ -5,14 +5,18 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: rum-config
-  namespace: rum
+  namespace: rum-prd
+  labels:
+    app: rum-collector
+    app.kubernetes.io/name: rum-collector
+    environment: production
 data:
   rum-config.json: |
     {
       "services": {
         "handon.club":      "handon",
         "dev.handon.club":  "handon-dev",
-        "hosteka.poyo.me":  "hosteka",
+        "hosteka.piyo.me":  "hosteka",
         "mi.hiyoko.club":   "misskey",
         "pic.handon.club":  "pic",
         "anypost.dev":      "anypost"

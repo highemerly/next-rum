@@ -1,12 +1,18 @@
-# Public routes for rum.piyo.me. /metrics is intentionally NOT routed here so it
-# stays internal-only (scraped via VMServiceScrape against the Service).
+# rum-collector IngressRoute (本番環境)
+# Traefik CRD を使用。/metrics は意図的に載せない（VMAgent が Service 経由で直接 scrape する）。
+---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: rum-collector
-  namespace: rum
+  namespace: rum-prd
+  labels:
+    app: rum-collector
+    app.kubernetes.io/name: rum-collector
+    environment: production
 spec:
-  entryPoints: [websecure]
+  entryPoints:
+    - websecure
   routes:
     - match: >-
         Host(`rum.piyo.me`) &&
@@ -16,5 +22,10 @@ spec:
       services:
         - name: rum-collector
           port: 8080
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: compress-gzip
+          namespace: traefik
   tls:
-    certResolver: letsencrypt
+    secretName: rum-tls
