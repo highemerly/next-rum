@@ -27,7 +27,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: rum-collector
-          image: ghcr.io/highemerly/rum-collector:0.1.0
+          image: ghcr.io/highemerly/next-rum:0.1.0
           imagePullPolicy: Always
           ports:
             - name: http

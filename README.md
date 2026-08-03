@@ -176,7 +176,7 @@ and the post-rollout verification runbook: **[deploy/k8s/README.md](deploy/k8s/R
 Local image build (arm64 Mac → amd64 node needs the platform flag):
 
 ```bash
-docker build --platform linux/amd64 -t ghcr.io/highemerly/rum-collector:dev .
+docker build --platform linux/amd64 -t ghcr.io/highemerly/next-rum:dev .
 ```
 
 ## Roadmap
