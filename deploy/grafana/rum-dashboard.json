@@ -228,8 +228,8 @@
       ]
     },
     {
-      "title": "Page loads per hour",
-      "description": "One increment per navigation beacon.",
+      "title": "Page views per hour",
+      "description": "One increment per navigation beacon, i.e. per full document load. In-app (SPA) transitions do not count: beacon.js runs once per document, and a client-side route change creates no new Navigation Timing entry.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
       "fieldConfig": {
@@ -262,7 +262,7 @@
     },
     {
       "title": "LCP rating share",
-      "description": "How many page loads were a good experience. Derived from the LCP histogram's rating label — the share of good is the headline number in most RUM reports.",
+      "description": "How many page views were a good experience. Derived from the LCP histogram's rating label — the share of good is the headline number in most RUM reports.",
       "type": "piechart",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
       "fieldConfig": {
@@ -286,7 +286,7 @@
     },
     {
       "title": "Device share",
-      "description": "Share of page loads. Derived from UA-CH; tablets report as mobile in most browsers.",
+      "description": "Share of page views. Derived from UA-CH; tablets report as mobile in most browsers.",
       "type": "piechart",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
       "fieldConfig": {
@@ -337,7 +337,7 @@
     },
     {
       "title": "Browser share",
-      "description": "Share of page loads in the selected window.",
+      "description": "Share of page views in the selected window.",
       "type": "piechart",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
       "fieldConfig": {
@@ -364,7 +364,7 @@
     },
     {
       "title": "OS share",
-      "description": "Share of page loads in the selected window.",
+      "description": "Share of page views in the selected window.",
       "type": "piechart",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
       "fieldConfig": {
@@ -391,7 +391,7 @@
     },
     {
       "title": "Country share — top 5",
-      "description": "Visitor country from the Cloudflare edge (no IP stored). The tail is folded into \"other\" so the slices still sum to all page loads. rum_country_total carries no path_group label, so the Path group filter does not narrow this panel.",
+      "description": "Visitor country from the Cloudflare edge (no IP stored). The tail is folded into \"other\" so the slices still sum to all page views. rum_country_total carries no path_group label, so the Path group filter does not narrow this panel.",
       "type": "piechart",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
       "fieldConfig": {
@@ -414,7 +414,7 @@
     },
     {
       "title": "Network (ASN) share — top 5",
-      "description": "Visitor networks. The tail is folded into \"other\" so the slices still sum to all page loads. rum_asn_total carries no path_group label, so the Path group filter does not narrow this panel.",
+      "description": "Visitor networks. The tail is folded into \"other\" so the slices still sum to all page views. rum_asn_total carries no path_group label, so the Path group filter does not narrow this panel.",
       "type": "piechart",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 31 },
       "fieldConfig": {
