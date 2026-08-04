@@ -149,6 +149,16 @@
     var cfg = res[0], m = res[1];
     var service    = resolveService(cfg);
     var path_group = resolvePathGroup(cfg, service);
+    // Captured once, next to path_group, because the two must describe the same
+    // page. The tail batch flushes at page hide, and in a client-side-routed app
+    // (Next.js, Misskey, Mastodon's /web) the visitor may have soft-navigated
+    // several times by then; reading location.pathname at that point would pair a
+    // later path with the path_group resolved at load, so one Loki line would name
+    // two different pages. beacon.js cannot observe soft navigations at all — they
+    // add no Navigation Timing entry and fire no pagehide — so attributing every
+    // metric to the document that was actually loaded is the only self-consistent
+    // reading available to it.
+    var path       = location.pathname;
     var navInfo    = getNavTimings();
     var cfInfo     = getCFInfo();
     var device     = getDevice();
@@ -159,7 +169,7 @@
       return {
         service: service,
         path_group: path_group,
-        path: location.pathname,   // Loki only (never a VM label)
+        path: path,                // Loki only (never a VM label)
         device: device,
         os: os,
         browser: browser,
