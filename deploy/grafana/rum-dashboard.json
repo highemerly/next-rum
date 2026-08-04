@@ -5,20 +5,17 @@
   "editable": true,
   "tags": ["rum", "web-vitals"],
   "time": { "from": "now-6h", "to": "now" },
+  "refresh": "1m",
   "templating": {
     "list": [
       {
-        "name": "datasource",
-        "type": "datasource",
-        "query": "prometheus",
-        "current": {}
-      },
-      {
         "name": "service",
+        "label": "Service",
         "type": "query",
-        "datasource": "${datasource}",
-        "query": "label_values(web_vitals_lcp_milliseconds_count, service)",
+        "query": "label_values(rum_pageview_total, service)",
+        "refresh": 1,
         "includeAll": true,
+        "allValue": ".*",
         "multi": true,
         "current": { "text": "All", "value": "$__all" }
       }
@@ -26,10 +23,61 @@
   },
   "panels": [
     {
+      "title": "Beacons received (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(increase(rum_collector_received_total{status=\"ok\"}[1h]))", "legendFormat": "ok" }
+      ]
+    },
+    {
+      "title": "Page loads (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "page loads" }
+      ]
+    },
+    {
+      "title": "Rejected / parse errors (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(increase(rum_collector_received_total{status=~\"parse_error|label_rejected\"}[1h]))", "legendFormat": "rejected" }
+      ]
+    },
+    {
+      "title": "Cloudflare cache HIT rate (last 1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(increase(rum_cf_cache_total{status=\"HIT\",service=~\"$service\"}[1h])) / clamp_min(sum(increase(rum_cf_cache_total{service=~\"$service\"}[1h])), 1)", "legendFormat": "hit rate" }
+      ]
+    },
+
+    {
       "title": "LCP p75 by service",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
         {
@@ -41,8 +89,7 @@
     {
       "title": "LCP p75 by path_group",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
         {
@@ -52,10 +99,10 @@
       ]
     },
     {
-      "title": "INP / CLS / FCP / TTFB p75 by service",
+      "title": "INP / FCP / TTFB p75 by service",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
         { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "INP {{service}}" },
         { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_fcp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "FCP {{service}}" },
@@ -63,14 +110,22 @@
       ]
     },
     {
-      "title": "rating=poor ratio (LCP) by service",
+      "title": "CLS p75 by service",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_cls_score_bucket{service=~\"$service\"}[1h])))", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "title": "rating=poor ratio (LCP)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
       "targets": [
         {
-          "expr": "sum by (service)(rate(web_vitals_lcp_milliseconds_count{rating=\"poor\",service=~\"$service\"}[1h])) / sum by (service)(rate(web_vitals_lcp_milliseconds_count{service=~\"$service\"}[1h]))",
+          "expr": "sum by (service)(increase(web_vitals_lcp_milliseconds_count{rating=\"poor\",service=~\"$service\"}[1h])) / clamp_min(sum by (service)(increase(web_vitals_lcp_milliseconds_count{service=~\"$service\"}[1h])), 1)",
           "legendFormat": "{{service}}"
         }
       ]
@@ -78,8 +133,7 @@
     {
       "title": "LCP p75 — mobile vs desktop",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
         {
@@ -88,24 +142,11 @@
         }
       ]
     },
-    {
-      "title": "Cloudflare cache HIT rate by service",
-      "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
-      "targets": [
-        {
-          "expr": "sum by (service)(rate(rum_cf_cache_total{status=\"HIT\",service=~\"$service\"}[1h])) / sum by (service)(rate(rum_cf_cache_total{service=~\"$service\"}[1h]))",
-          "legendFormat": "{{service}}"
-        }
-      ]
-    },
+
     {
       "title": "Transfer time p75 — cache HIT vs MISS",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
         {
@@ -115,65 +156,90 @@
       ]
     },
     {
+      "title": "Connection breakdown p75 (DNS / TCP / TLS / response)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_dns_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "DNS" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tcp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "TCP" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tls_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "TLS" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "response" }
+      ]
+    },
+    {
       "title": "HTML transfer size p50/p75/p95",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
       "fieldConfig": { "defaults": { "unit": "bytes" } },
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum by (service, le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p50 {{service}}" },
-        { "expr": "histogram_quantile(0.75, sum by (service, le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p75 {{service}}" },
-        { "expr": "histogram_quantile(0.95, sum by (service, le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p95 {{service}}" }
+        { "expr": "histogram_quantile(0.50, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p75" },
+        { "expr": "histogram_quantile(0.95, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p95" }
       ]
     },
     {
-      "title": "Collector intake by status",
+      "title": "Cache status mix (page loads/h)",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
-      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
-        { "expr": "sum by (kind, status)(rate(rum_collector_received_total[5m]))", "legendFormat": "{{kind}} {{status}}" }
+        { "expr": "sum by (status)(increase(rum_cf_cache_total{service=~\"$service\"}[1h]))", "legendFormat": "{{status}}" }
+      ]
+    },
+
+    {
+      "title": "Page loads by browser (per hour)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 44 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "sum by (browser)(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{browser}}" }
       ]
     },
     {
-      "title": "Pageviews by browser",
+      "title": "Page loads by OS (per hour)",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
-      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 44 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
-        { "expr": "sum by (browser)(rate(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{browser}}" }
+        { "expr": "sum by (os)(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{os}}" }
       ]
     },
     {
-      "title": "Pageviews by OS",
+      "title": "Page loads by device (per hour)",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
-      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 44 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
-        { "expr": "sum by (os)(rate(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{os}}" }
+        { "expr": "sum by (device)(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{device}}" }
       ]
     },
     {
-      "title": "Pageviews by country (top 15)",
+      "title": "Page loads by country (top 15, per hour)",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 48 },
-      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
-        { "expr": "topk(15, sum by (country)(rate(rum_country_total{service=~\"$service\"}[1h])))", "legendFormat": "{{country}}" }
+        { "expr": "topk(15, sum by (country)(increase(rum_country_total{service=~\"$service\"}[1h])))", "legendFormat": "{{country}}" }
       ]
     },
     {
-      "title": "Pageviews by ASN (top 15)",
+      "title": "Page loads by ASN (top 15, per hour)",
       "type": "timeseries",
-      "datasource": "${datasource}",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
-      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
       "targets": [
-        { "expr": "topk(15, sum by (asn)(rate(rum_asn_total{service=~\"$service\"}[1h])))", "legendFormat": "AS{{asn}}" }
+        { "expr": "topk(15, sum by (asn)(increase(rum_asn_total{service=~\"$service\"}[1h])))", "legendFormat": "AS{{asn}}" }
+      ]
+    },
+    {
+      "title": "Collector intake by status (per hour)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 60 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "sum by (kind, status)(increase(rum_collector_received_total[1h]))", "legendFormat": "{{kind}} {{status}}" }
       ]
     }
   ]
