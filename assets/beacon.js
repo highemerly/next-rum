@@ -135,8 +135,15 @@
   }
 
   // Load config and web-vitals in parallel (both cross-origin -> CORS required).
+  // pitfall: do not use cache:'force-cache' here. force-cache serves a cached
+  // response even when stale, so a browser that fetched rum-config.json once
+  // keeps using it until the entry is evicted — a renamed service id then makes
+  // that client send a value the collector no longer accepts, and every beacon
+  // from it is clamped to default_service and counted as label_rejected. The
+  // default cache mode honours the Cache-Control max-age the collector sets
+  // (ASSET_MAX_AGE_SECONDS), so config changes reach returning visitors.
   Promise.all([
-    fetch(CONFIG_URL, { cache: 'force-cache' }).then(function (r) { return r.json(); }),
+    fetch(CONFIG_URL).then(function (r) { return r.json(); }),
     import(VITALS_URL) // dynamic cross-origin import requires CORS
   ]).then(function (res) {
     var cfg = res[0], m = res[1];
