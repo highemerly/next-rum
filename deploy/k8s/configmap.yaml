@@ -17,8 +17,8 @@ data:
         "handon.club":      "handon",
         "dev.handon.club":  "handon-dev",
         "hosteka.piyo.me":  "hosteka",
-        "mi.hiyoko.club":   "misskey",
-        "pic.handon.club":  "pic",
+        "mi.hiyoko.club":   "hiyoko",
+        "pic.handon.club":  "movapic-neo",
         "anypost.dev":      "anypost"
       },
       "default_service": "unknown",
@@ -39,16 +39,30 @@ data:
           { "pattern": "/",       "group": "home" },
           { "pattern": "/web/**", "group": "web_ui" }
         ],
-        "misskey": [
+        "hiyoko": [
           { "pattern": "/",            "group": "home" },
           { "pattern": "/@*",          "group": "profile" },
           { "pattern": "/notes/**",    "group": "note" },
           { "pattern": "/channels/**", "group": "channel" }
         ],
-        "pic": [
-          { "pattern": "/",     "group": "home" },
-          { "pattern": "/p/**", "group": "photo" },
-          { "pattern": "/u/**", "group": "user" }
+        "movapic-neo": [
+          { "pattern": "/",                "group": "home" },
+          { "pattern": "/create**",        "group": "create" },
+          { "pattern": "/public",          "group": "timeline" },
+          { "pattern": "/favorite",        "group": "timeline" },
+          { "pattern": "/u/*/status/**",   "group": "photo" },
+          { "pattern": "/u/*",             "group": "user" },
+          { "pattern": "/u/*/**",          "group": "user" },
+          { "pattern": "/notifications",   "group": "notifications" },
+          { "pattern": "/dashboard",       "group": "dashboard" },
+          { "pattern": "/settings**",      "group": "settings" },
+          { "pattern": "/docs**",          "group": "docs" },
+          { "pattern": "/announcements**", "group": "announcements" },
+          { "pattern": "/stats",           "group": "stats" },
+          { "pattern": "/terms",           "group": "legal" },
+          { "pattern": "/privacy",         "group": "legal" },
+          { "pattern": "/license",         "group": "legal" },
+          { "pattern": "/admin/**",        "group": "admin" }
         ],
         "anypost": [
           { "pattern": "/",        "group": "home" },

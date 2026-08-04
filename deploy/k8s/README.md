@@ -126,7 +126,7 @@ curl -s https://rum.piyo.me/rum-config.json | head
 # 合成ビーコン（CF 経由なので country/asn も付く）
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://rum.piyo.me/collect \
   -H 'Content-Type: text/plain' \
-  -d '{"kind":"navigation","service":"pic","path_group":"home","device":"desktop","nav_type":"navigate","protocol":"h2","cf_cache":"DYNAMIC"}'
+  -d '{"kind":"navigation","service":"movapic-neo","path_group":"home","device":"desktop","nav_type":"navigate","protocol":"h2","cf_cache":"DYNAMIC"}'
 
 # メトリクスに入ったか（/metrics は外部公開していないので port-forward）
 kubectl -n rum-prd port-forward svc/rum-collector 8080:8080 &
