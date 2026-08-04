@@ -17,3 +17,9 @@ spec:
     - port: http
       path: /metrics
       interval: 30s
+      # pitfall: VMServiceScrape は __meta_kubernetes_service_name を service ラベルへ
+      # 代入する。コレクタも service（=計測対象のサイト）を出しているので衝突し、
+      # honor_labels=false（既定）だとターゲット側の "rum-collector" が勝って、
+      # ビーコンが送った値は exported_service へ退避されてしまう。ダッシュボードの
+      # Service 変数が rum-collector しか返さなくなるので、公開側のラベルを優先する。
+      honorLabels: true
