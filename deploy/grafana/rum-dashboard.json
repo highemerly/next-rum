@@ -73,7 +73,7 @@
         "justifyMode": "auto"
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "LCP p75" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (increase(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "LCP p75" }
       ]
     },
     {
@@ -102,7 +102,7 @@
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "INP p75" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (increase(web_vitals_inp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "INP p75" }
       ]
     },
     {
@@ -131,7 +131,7 @@
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_cls_score_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "CLS p75" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (increase(web_vitals_cls_score_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "CLS p75" }
       ]
     },
     {
@@ -160,7 +160,7 @@
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_fcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "FCP p75" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (increase(web_vitals_fcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "FCP p75" }
       ]
     },
     {
@@ -189,7 +189,7 @@
         "textMode": "auto"
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_ttfb_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TTFB p75" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (increase(web_vitals_ttfb_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TTFB p75" }
       ]
     },
 
@@ -224,7 +224,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{service}}" }
+        { "expr": "histogram_quantile(0.75, sum by (service, le) (increase(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{service}}" }
       ]
     },
     {
@@ -461,7 +461,7 @@
         "showUnfilled": true
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (path_group, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{path_group}}" }
+        { "expr": "histogram_quantile(0.75, sum by (path_group, le) (increase(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{path_group}}" }
       ]
     },
 
@@ -502,7 +502,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
+        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (increase(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
       ]
     },
     {
@@ -536,7 +536,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (rate(web_vitals_cls_score_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
+        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (increase(web_vitals_cls_score_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
       ]
     },
     {
@@ -569,7 +569,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
+        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (increase(web_vitals_inp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
       ]
     },
 
@@ -603,11 +603,11 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_dns_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "DNS" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TCP" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tls_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TLS" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_request_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "request" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "response" }
+        { "expr": "histogram_quantile(0.75, sum by (le)(increase(rum_nav_dns_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "DNS" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(increase(rum_nav_tcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TCP" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(increase(rum_nav_tls_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TLS" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(increase(rum_nav_request_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "request" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(increase(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "response" }
       ]
     },
     {
@@ -632,7 +632,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (cf_cache, le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{cf_cache}}" }
+        { "expr": "histogram_quantile(0.75, sum by (cf_cache, le)(increase(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{cf_cache}}" }
       ]
     },
     {
@@ -651,9 +651,9 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(rate(rum_nav_tcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TCP {{protocol}}" },
-        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(rate(rum_nav_tls_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TLS {{protocol}}" },
-        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "response {{protocol}}" }
+        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(increase(rum_nav_tcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TCP {{protocol}}" },
+        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(increase(rum_nav_tls_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TLS {{protocol}}" },
+        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(increase(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "response {{protocol}}" }
       ]
     },
     {
@@ -672,9 +672,9 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p50" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p75" },
-        { "expr": "histogram_quantile(0.95, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p95" }
+        { "expr": "histogram_quantile(0.50, sum by (le)(increase(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(increase(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p75" },
+        { "expr": "histogram_quantile(0.95, sum by (le)(increase(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p95" }
       ]
     },
     {
