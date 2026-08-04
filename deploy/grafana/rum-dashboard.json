@@ -29,6 +29,19 @@
         "allValue": ".*",
         "multi": true,
         "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "breakdown",
+        "label": "Break down by",
+        "description": "Dimension for the Web Vitals breakdown row. Only labels carried by the web_vitals histograms are listed; browser / country / ASN live on the page-load counters instead (see the panel descriptions).",
+        "type": "custom",
+        "query": "path_group,device,nav_type",
+        "options": [
+          { "text": "path_group", "value": "path_group", "selected": true },
+          { "text": "device", "value": "device", "selected": false },
+          { "text": "nav_type", "value": "nav_type", "selected": false }
+        ],
+        "current": { "text": "path_group", "value": "path_group" }
       }
     ]
   },
@@ -367,6 +380,219 @@
       },
       "targets": [
         { "expr": "sum by (status)(increase(rum_collector_received_total[1h]))", "legendFormat": "{{status}}" }
+      ]
+    },
+
+    {
+      "type": "row",
+      "title": "Web Vitals breakdown — by $breakdown",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "panels": []
+    },
+    {
+      "title": "LCP p75 by $breakdown",
+      "description": "Switch the dimension with the \"Break down by\" picker. browser / country / ASN are not available here: the web_vitals histograms carry only service, path_group, device, nav_type and rating, to keep their cardinality flat. Use Loki for those cuts — every beacon logs browser, country and asn alongside the value.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 8,
+            "spanNulls": true,
+            "thresholdsStyle": { "mode": "dashed" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "#fab219", "value": 2500 },
+              { "color": "#d03b3b", "value": 4000 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
+      ]
+    },
+    {
+      "title": "CLS p75 by $breakdown",
+      "description": "Cumulative Layout Shift. Guides at the 0.1 / 0.25 thresholds.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 8,
+            "spanNulls": true,
+            "thresholdsStyle": { "mode": "dashed" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "#fab219", "value": 0.1 },
+              { "color": "#d03b3b", "value": 0.25 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (rate(web_vitals_cls_score_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
+      ]
+    },
+    {
+      "title": "INP p75 by $breakdown",
+      "description": "Interaction to Next Paint. Guides at the 200ms / 500ms thresholds.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 8,
+            "spanNulls": true,
+            "thresholdsStyle": { "mode": "dashed" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "#fab219", "value": 200 },
+              { "color": "#d03b3b", "value": 500 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by ($breakdown, le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{$breakdown}}" }
+      ]
+    },
+
+    {
+      "type": "row",
+      "title": "Connection",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "panels": []
+    },
+    {
+      "title": "Connection phases p75",
+      "description": "Navigation Timing for the HTML document: DNS lookup, TCP connect, TLS handshake, request send, response transfer. Each is its own histogram, all on one millisecond scale.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 39 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "DNS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "TCP" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "TLS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
+          { "matcher": { "id": "byName", "options": "request" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] },
+          { "matcher": { "id": "byName", "options": "response" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d55181" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_dns_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "DNS" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TCP" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tls_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TLS" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_request_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "request" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "response" }
+      ]
+    },
+    {
+      "title": "Response transfer p75 — by cache status",
+      "description": "Does a Cloudflare HIT actually deliver the HTML faster? Needs the Server-Timing Transform Rule on the service zone, otherwise everything reports as NONE.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 39 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "HIT" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
+          { "matcher": { "id": "byName", "options": "MISS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "DYNAMIC" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "NONE" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (cf_cache, le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{cf_cache}}" }
+      ]
+    },
+    {
+      "title": "Connection phases p75 — HTTP/2 vs HTTP/3",
+      "description": "DNS is excluded (it precedes the protocol choice). Useful for spotting whether h3 actually shortens the handshake.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
+        }
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(rate(rum_nav_tcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TCP {{protocol}}" },
+        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(rate(rum_nav_tls_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TLS {{protocol}}" },
+        { "expr": "histogram_quantile(0.75, sum by (protocol, le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "response {{protocol}}" }
+      ]
+    },
+    {
+      "title": "HTML transfer size p50 / p75 / p95",
+      "description": "Bytes on the wire for the document (transferSize).",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
+        }
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p75" },
+        { "expr": "histogram_quantile(0.95, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p95" }
       ]
     }
   ]
