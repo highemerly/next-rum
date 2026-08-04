@@ -18,228 +18,355 @@
         "allValue": ".*",
         "multi": true,
         "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "path_group",
+        "label": "Path group",
+        "type": "query",
+        "query": "label_values(rum_pageview_total{service=~\"$service\"}, path_group)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
       }
     ]
   },
   "panels": [
     {
-      "title": "Beacons received (last 1h)",
+      "title": "LCP p75",
+      "description": "Largest Contentful Paint, 75th percentile over the last hour. Good < 2.5s, poor > 4s.",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [
-        { "expr": "sum(increase(rum_collector_received_total{status=\"ok\"}[1h]))", "legendFormat": "ok" }
-      ]
-    },
-    {
-      "title": "Page loads (last 1h)",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [
-        { "expr": "sum(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "page loads" }
-      ]
-    },
-    {
-      "title": "Rejected / parse errors (last 1h)",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "ms",
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 2500 },
+              { "color": "#d03b3b", "value": 4000 }
             ]
           }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
       "targets": [
-        { "expr": "sum(increase(rum_collector_received_total{status=~\"parse_error|label_rejected\"}[1h]))", "legendFormat": "rejected" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "LCP p75" }
       ]
     },
     {
-      "title": "Cloudflare cache HIT rate (last 1h)",
+      "title": "INP p75",
+      "description": "Interaction to Next Paint. Good < 200ms, poor > 500ms.",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 200 },
+              { "color": "#d03b3b", "value": 500 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
       "targets": [
-        { "expr": "sum(increase(rum_cf_cache_total{status=\"HIT\",service=~\"$service\"}[1h])) / clamp_min(sum(increase(rum_cf_cache_total{service=~\"$service\"}[1h])), 1)", "legendFormat": "hit rate" }
+        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "INP p75" }
+      ]
+    },
+    {
+      "title": "CLS p75",
+      "description": "Cumulative Layout Shift. Good < 0.1, poor > 0.25.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 0.1 },
+              { "color": "#d03b3b", "value": 0.25 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_cls_score_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "CLS p75" }
+      ]
+    },
+    {
+      "title": "FCP p75",
+      "description": "First Contentful Paint. Good < 1.8s, poor > 3s.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 1800 },
+              { "color": "#d03b3b", "value": 3000 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_fcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "FCP p75" }
+      ]
+    },
+    {
+      "title": "TTFB p75",
+      "description": "Time to First Byte. Good < 800ms, poor > 1.8s.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 800 },
+              { "color": "#d03b3b", "value": 1800 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (le) (rate(web_vitals_ttfb_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "TTFB p75" }
       ]
     },
 
     {
-      "title": "LCP p75 by service",
+      "title": "LCP p75 over time",
+      "description": "Per service. The 2.5s / 4s guides are the Google good / poor thresholds.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\"}[1h])))",
-          "legendFormat": "{{service}}"
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "pointSize": 8,
+            "showPoints": "auto",
+            "spanNulls": true,
+            "thresholdsStyle": { "mode": "dashed" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "transparent", "value": null },
+              { "color": "#fab219", "value": 2500 },
+              { "color": "#d03b3b", "value": 4000 }
+            ]
+          }
         }
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{service}}" }
       ]
     },
     {
-      "title": "LCP p75 by path_group",
+      "title": "Page loads per hour",
+      "description": "One increment per navigation beacon.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.75, sum by (service, path_group, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\"}[1h])))",
-          "legendFormat": "{{service}}/{{path_group}}"
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "pointSize": 8,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
         }
-      ]
-    },
-    {
-      "title": "INP / FCP / TTFB p75 by service",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_inp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "INP {{service}}" },
-        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_fcp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "FCP {{service}}" },
-        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_ttfb_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "TTFB {{service}}" }
-      ]
-    },
-    {
-      "title": "CLS p75 by service",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (service, le) (rate(web_vitals_cls_score_bucket{service=~\"$service\"}[1h])))", "legendFormat": "{{service}}" }
-      ]
-    },
-    {
-      "title": "rating=poor ratio (LCP)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } },
-      "targets": [
-        {
-          "expr": "sum by (service)(increase(web_vitals_lcp_milliseconds_count{rating=\"poor\",service=~\"$service\"}[1h])) / clamp_min(sum by (service)(increase(web_vitals_lcp_milliseconds_count{service=~\"$service\"}[1h])), 1)",
-          "legendFormat": "{{service}}"
-        }
-      ]
-    },
-    {
-      "title": "LCP p75 — mobile vs desktop",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.75, sum by (service, device, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\"}[1h])))",
-          "legendFormat": "{{service}} {{device}}"
-        }
+        { "expr": "sum by (service)(increase(rum_pageview_total{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{service}}" }
       ]
     },
 
     {
-      "title": "Transfer time p75 — cache HIT vs MISS",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "title": "Browser share",
+      "description": "Share of page loads in the selected window.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "chrome" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "safari" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "firefox" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
+          { "matcher": { "id": "byName", "options": "edge" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] },
+          { "matcher": { "id": "byName", "options": "samsung" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d55181" } }] },
+          { "matcher": { "id": "byName", "options": "other" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
       "targets": [
-        {
-          "expr": "histogram_quantile(0.75, sum by (cf_cache, le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\"}[1h])))",
-          "legendFormat": "{{cf_cache}}"
-        }
+        { "expr": "sum by (browser)(increase(rum_pageview_total{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{browser}}" }
       ]
     },
     {
-      "title": "Connection breakdown p75 (DNS / TCP / TLS / response)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
-      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "title": "OS share",
+      "description": "Share of page loads in the selected window.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "windows" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "macos" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "ios" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
+          { "matcher": { "id": "byName", "options": "android" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] },
+          { "matcher": { "id": "byName", "options": "linux" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d55181" } }] },
+          { "matcher": { "id": "byName", "options": "other" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
       "targets": [
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_dns_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "DNS" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tcp_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "TCP" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_tls_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "TLS" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_response_milliseconds_bucket{service=~\"$service\"}[1h])))", "legendFormat": "response" }
+        { "expr": "sum by (os)(increase(rum_pageview_total{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{os}}" }
       ]
     },
     {
-      "title": "HTML transfer size p50/p75/p95",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
-      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "title": "Network (ASN) share — top 5",
+      "description": "Visitor networks. The tail is folded into \"other\" so the slices still sum to all page loads. Note: rum_asn_total carries no path_group label, so the Path group filter does not narrow this panel.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "other" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p50" },
-        { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p75" },
-        { "expr": "histogram_quantile(0.95, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\"}[1h])))", "legendFormat": "p95" }
-      ]
-    },
-    {
-      "title": "Cache status mix (page loads/h)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "targets": [
-        { "expr": "sum by (status)(increase(rum_cf_cache_total{service=~\"$service\"}[1h]))", "legendFormat": "{{status}}" }
+        { "expr": "topk(5, sum by (asn)(increase(rum_asn_total{service=~\"$service\"}[1h])))", "legendFormat": "AS{{asn}}" },
+        { "expr": "clamp_min(sum(increase(rum_asn_total{service=~\"$service\"}[1h])) - sum(topk(5, sum by (asn)(increase(rum_asn_total{service=~\"$service\"}[1h])))), 0)", "legendFormat": "other" }
       ]
     },
 
     {
-      "title": "Page loads by browser (per hour)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 44 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
+      "title": "LCP p75 by path group",
+      "description": "Which kinds of page are slow. Colored on the same good / poor thresholds as the tile above.",
+      "type": "bargauge",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 2500 },
+              { "color": "#d03b3b", "value": 4000 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true
+      },
       "targets": [
-        { "expr": "sum by (browser)(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{browser}}" }
+        { "expr": "histogram_quantile(0.75, sum by (path_group, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{path_group}}" }
       ]
     },
     {
-      "title": "Page loads by OS (per hour)",
+      "title": "Collector intake",
+      "description": "Beacons accepted vs rejected. A sustained non-zero reject line means a config drift or abuse.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 44 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 22 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*(parse_error|label_rejected).*" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d03b3b" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
       "targets": [
-        { "expr": "sum by (os)(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{os}}" }
-      ]
-    },
-    {
-      "title": "Page loads by device (per hour)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 44 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "targets": [
-        { "expr": "sum by (device)(increase(rum_pageview_total{service=~\"$service\"}[1h]))", "legendFormat": "{{device}}" }
-      ]
-    },
-    {
-      "title": "Page loads by country (top 15, per hour)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "targets": [
-        { "expr": "topk(15, sum by (country)(increase(rum_country_total{service=~\"$service\"}[1h])))", "legendFormat": "{{country}}" }
-      ]
-    },
-    {
-      "title": "Page loads by ASN (top 15, per hour)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "targets": [
-        { "expr": "topk(15, sum by (asn)(increase(rum_asn_total{service=~\"$service\"}[1h])))", "legendFormat": "AS{{asn}}" }
-      ]
-    },
-    {
-      "title": "Collector intake by status (per hour)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 60 },
-      "fieldConfig": { "defaults": { "unit": "short" } },
-      "targets": [
-        { "expr": "sum by (kind, status)(increase(rum_collector_received_total[1h]))", "legendFormat": "{{kind}} {{status}}" }
+        { "expr": "sum by (status)(increase(rum_collector_received_total[1h]))", "legendFormat": "{{status}}" }
       ]
     }
   ]
