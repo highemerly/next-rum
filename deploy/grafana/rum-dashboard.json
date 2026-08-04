@@ -254,10 +254,92 @@
     },
 
     {
+      "type": "row",
+      "title": "Composition",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "panels": []
+    },
+    {
+      "title": "LCP rating share",
+      "description": "How many page loads were a good experience. Derived from the LCP histogram's rating label — the share of good is the headline number in most RUM reports.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "good" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#0ca30c" } }] },
+          { "matcher": { "id": "byName", "options": "needs-improvement" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#fab219" } }] },
+          { "matcher": { "id": "byName", "options": "poor" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d03b3b" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        { "expr": "sum by (rating)(increase(web_vitals_lcp_milliseconds_count{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{rating}}" }
+      ]
+    },
+    {
+      "title": "Device share",
+      "description": "Share of page loads. Derived from UA-CH; tablets report as mobile in most browsers.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "desktop" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "mobile" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "tablet" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
+          { "matcher": { "id": "byName", "options": "unknown" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        { "expr": "sum by (device)(increase(rum_pageview_total{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{device}}" }
+      ]
+    },
+    {
+      "title": "Cache status share",
+      "description": "Cloudflare cache outcome per page load. Needs the Server-Timing Transform Rule on the service zone, otherwise everything reports as NONE.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "HIT" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
+          { "matcher": { "id": "byName", "options": "MISS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
+          { "matcher": { "id": "byName", "options": "DYNAMIC" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
+          { "matcher": { "id": "byName", "options": "EXPIRED" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] },
+          { "matcher": { "id": "byName", "options": "NONE" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d55181" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        { "expr": "sum by (status)(increase(rum_cf_cache_total{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
       "title": "Browser share",
       "description": "Share of page loads in the selected window.",
       "type": "piechart",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 14 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 23 },
       "fieldConfig": {
         "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
         "overrides": [
@@ -284,7 +366,7 @@
       "title": "OS share",
       "description": "Share of page loads in the selected window.",
       "type": "piechart",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 14 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 23 },
       "fieldConfig": {
         "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
         "overrides": [
@@ -308,10 +390,33 @@
       ]
     },
     {
-      "title": "Network (ASN) share — top 5",
-      "description": "Visitor networks. The tail is folded into \"other\" so the slices still sum to all page loads. Note: rum_asn_total carries no path_group label, so the Path group filter does not narrow this panel.",
+      "title": "Country share — top 5",
+      "description": "Visitor country from the Cloudflare edge (no IP stored). The tail is folded into \"other\" so the slices still sum to all page loads. rum_country_total carries no path_group label, so the Path group filter does not narrow this panel.",
       "type": "piechart",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 14 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 23 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "other" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#008300" } }] }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": false },
+        "pieType": "donut",
+        "displayLabels": ["name", "percent"],
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "right", "values": ["value"] },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        { "expr": "topk(5, sum by (country)(increase(rum_country_total{service=~\"$service\"}[1h])))", "legendFormat": "{{country}}" },
+        { "expr": "clamp_min(sum(increase(rum_country_total{service=~\"$service\"}[1h])) - sum(topk(5, sum by (country)(increase(rum_country_total{service=~\"$service\"}[1h])))), 0)", "legendFormat": "other" }
+      ]
+    },
+    {
+      "title": "Network (ASN) share — top 5",
+      "description": "Visitor networks. The tail is folded into \"other\" so the slices still sum to all page loads. rum_asn_total carries no path_group label, so the Path group filter does not narrow this panel.",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 31 },
       "fieldConfig": {
         "defaults": { "unit": "short", "color": { "mode": "palette-classic" } },
         "overrides": [
@@ -330,12 +435,11 @@
         { "expr": "clamp_min(sum(increase(rum_asn_total{service=~\"$service\"}[1h])) - sum(topk(5, sum by (asn)(increase(rum_asn_total{service=~\"$service\"}[1h])))), 0)", "legendFormat": "other" }
       ]
     },
-
     {
       "title": "LCP p75 by path group",
-      "description": "Which kinds of page are slow. Colored on the same good / poor thresholds as the tile above.",
+      "description": "Which kinds of page are slow. Colored on the same good / poor thresholds as the tile at the top.",
       "type": "bargauge",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 22 },
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 31 },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -360,41 +464,19 @@
         { "expr": "histogram_quantile(0.75, sum by (path_group, le) (rate(web_vitals_lcp_milliseconds_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "{{path_group}}" }
       ]
     },
-    {
-      "title": "Collector intake",
-      "description": "Beacons accepted vs rejected. A sustained non-zero reject line means a config drift or abuse.",
-      "type": "timeseries",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 22 },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
-        },
-        "overrides": [
-          { "matcher": { "id": "byRegexp", "options": ".*(parse_error|label_rejected).*" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d03b3b" } }] }
-        ]
-      },
-      "options": {
-        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
-        "tooltip": { "mode": "multi", "sort": "desc" }
-      },
-      "targets": [
-        { "expr": "sum by (status)(increase(rum_collector_received_total[1h]))", "legendFormat": "{{status}}" }
-      ]
-    },
 
     {
       "type": "row",
       "title": "Web Vitals breakdown — by $breakdown",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
       "panels": []
     },
     {
       "title": "LCP p75 by $breakdown",
       "description": "Switch the dimension with the \"Break down by\" picker. browser / country / ASN are not available here: the web_vitals histograms carry only service, path_group, device, nav_type and rating, to keep their cardinality flat. Use Loki for those cuts — every beacon logs browser, country and asn alongside the value.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 30 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 40 },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -427,7 +509,7 @@
       "title": "CLS p75 by $breakdown",
       "description": "Cumulative Layout Shift. Guides at the 0.1 / 0.25 thresholds.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 30 },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 40 },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -461,7 +543,7 @@
       "title": "INP p75 by $breakdown",
       "description": "Interaction to Next Paint. Guides at the 200ms / 500ms thresholds.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 30 },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 40 },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -495,14 +577,14 @@
       "type": "row",
       "title": "Connection",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 48 },
       "panels": []
     },
     {
       "title": "Connection phases p75",
       "description": "Navigation Timing for the HTML document: DNS lookup, TCP connect, TLS handshake, request send, response transfer. Each is its own histogram, all on one millisecond scale.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 39 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 49 },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -530,9 +612,9 @@
     },
     {
       "title": "Response transfer p75 — by cache status",
-      "description": "Does a Cloudflare HIT actually deliver the HTML faster? Needs the Server-Timing Transform Rule on the service zone, otherwise everything reports as NONE.",
+      "description": "Does a Cloudflare HIT actually deliver the HTML faster?",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 39 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 49 },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -542,7 +624,7 @@
           { "matcher": { "id": "byName", "options": "HIT" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }] },
           { "matcher": { "id": "byName", "options": "MISS" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }] },
           { "matcher": { "id": "byName", "options": "DYNAMIC" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }] },
-          { "matcher": { "id": "byName", "options": "NONE" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }] }
+          { "matcher": { "id": "byName", "options": "NONE" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d55181" } }] }
         ]
       },
       "options": {
@@ -557,7 +639,7 @@
       "title": "Connection phases p75 — HTTP/2 vs HTTP/3",
       "description": "DNS is excluded (it precedes the protocol choice). Useful for spotting whether h3 actually shortens the handshake.",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 57 },
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
@@ -578,7 +660,7 @@
       "title": "HTML transfer size p50 / p75 / p95",
       "description": "Bytes on the wire for the document (transferSize).",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 57 },
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
@@ -593,6 +675,28 @@
         { "expr": "histogram_quantile(0.50, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p50" },
         { "expr": "histogram_quantile(0.75, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p75" },
         { "expr": "histogram_quantile(0.95, sum by (le)(rate(rum_nav_transfer_bytes_bucket{service=~\"$service\", path_group=~\"$path_group\"}[1h])))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "title": "Collector intake",
+      "description": "Beacons accepted vs rejected. A sustained non-zero reject line means a config drift or abuse. rum_collector_received_total has no service label, so this panel is fleet-wide.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 65 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "pointSize": 8, "spanNulls": true }
+        },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*(parse_error|label_rejected).*" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d03b3b" } }] }
+        ]
+      },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        { "expr": "sum by (status)(increase(rum_collector_received_total[1h]))", "legendFormat": "{{status}}" }
       ]
     }
   ]
