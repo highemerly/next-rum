@@ -23,5 +23,7 @@ ENV CONFIG_PATH=/etc/rum/rum-config.json \
     LISTEN_ADDR=:8080
 
 EXPOSE 8080
-USER nonroot:nonroot
+# distroless nonroot の UID/GID を数値で指定する。名前 (nonroot) だと
+# Kubernetes の runAsNonRoot が非 root かを検証できず起動に失敗する。
+USER 65532:65532
 ENTRYPOINT ["/rum-collector"]

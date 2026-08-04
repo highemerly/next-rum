@@ -25,6 +25,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        # distroless の nonroot ユーザー。runAsNonRoot は名前 (USER nonroot) だと
+        # 非 root かを kubelet が検証できないため、数値 UID/GID を明示する。
+        runAsUser: 65532
+        runAsGroup: 65532
       containers:
         - name: rum-collector
           image: ghcr.io/highemerly/next-rum:0.1.0
