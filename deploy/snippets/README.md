@@ -47,6 +47,20 @@ export default function Document() {
 }
 ```
 
-Targets: `pic.handon.club` (SHAMEZOU/Next.js), `anypost.dev`, `hosteka.poyo.me`,
+Targets: `pic.handon.club` (SHAMEZOU/Next.js), `anypost.dev`, `hosteka.piyo.me`,
 and `dev.handon.club` when it runs a self-hosted app (otherwise use the Traefik
 middleware in `../traefik/`).
+
+## Same-origin, behind a path prefix (`hosteka.piyo.me`)
+
+A site can serve the collector under its own host instead of `rum.piyo.me`:
+
+```html
+<script async src="/_n-rum/beacon.js"></script>
+```
+
+The site's Ingress routes `/_n-rum/{beacon.js,web-vitals.js,rum-config.json,collect}`
+to the collector and strips `/_n-rum` (see `manifests/hosteka/prd/ingressroute.yaml`
+in k8sg1-repo). `beacon.js` resolves the other three URLs against its own
+directory, so no attribute is needed. Match the four paths exactly rather than
+`PathPrefix`, or `/_n-rum/metrics` becomes public.

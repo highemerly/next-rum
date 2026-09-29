@@ -9,15 +9,20 @@
   // document.currentScript is only valid during initial synchronous execution.
   var SELF = document.currentScript;
 
-  // Derive the collector origin from this script's own URL so the same file works
-  // in production (https://rum.piyo.me/beacon.js) and locally
-  // (http://localhost:8080/beacon.js). Falls back to the production origin.
-  var ORIGIN = (function () {
-    try { return new URL(SELF.src).origin; } catch (e) { return 'https://rum.piyo.me'; }
+  // Derive the collector base from this script's own URL so the same file works
+  // in production (https://rum.piyo.me/beacon.js), locally
+  // (http://localhost:8080/beacon.js), and behind a path prefix on the measured
+  // site itself (https://hosteka.piyo.me/_n-rum/beacon.js, routed to the collector
+  // by the site's Ingress with the prefix stripped). The base is the script's
+  // directory, not its origin: resolving against the origin would send the
+  // prefixed case's config fetch and beacons to the site instead of the collector.
+  // Falls back to the production collector.
+  var BASE = (function () {
+    try { return new URL('./', SELF.src).href; } catch (e) { return 'https://rum.piyo.me/'; }
   })();
-  var CONFIG_URL  = ORIGIN + '/rum-config.json';
-  var VITALS_URL  = ORIGIN + '/web-vitals.js';
-  var COLLECT_URL = ORIGIN + '/collect';
+  var CONFIG_URL  = BASE + 'rum-config.json';
+  var VITALS_URL  = BASE + 'web-vitals.js';
+  var COLLECT_URL = BASE + 'collect';
 
   // ---- glob (for config path_groups) ----
   // * matches a single path segment ([^/]*); ** matches across segments (.*).
