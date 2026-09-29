@@ -69,7 +69,31 @@ data:
           { "pattern": "/posts/**", "group": "post" }
         ],
         "hosteka": [
-          { "pattern": "/", "group": "home" }
+          { "pattern": "/",                   "group": "home" },
+          { "pattern": "/events",             "group": "event_list" },
+          { "pattern": "/events/hashtag/*",   "group": "event_list" },
+          { "pattern": "/events/create",      "group": "event_form" },
+          { "pattern": "/events/*/edit",      "group": "event_form" },
+          { "pattern": "/events/*",           "group": "event" },
+          { "pattern": "/events/*/**",        "group": "event_sub" },
+          { "pattern": "/pre-events",         "group": "pre_event_list" },
+          { "pattern": "/pre-events/create",  "group": "pre_event_form" },
+          { "pattern": "/pre-events/*/edit",  "group": "pre_event_form" },
+          { "pattern": "/pre-events/*",       "group": "pre_event" },
+          { "pattern": "/pre-events/*/**",    "group": "pre_event_sub" },
+          { "pattern": "/orgs/**",            "group": "org" },
+          { "pattern": "/users/*",            "group": "user" },
+          { "pattern": "/dashboard**",        "group": "dashboard" },
+          { "pattern": "/account**",          "group": "account" },
+          { "pattern": "/auth/**",            "group": "auth" },
+          { "pattern": "/announcements**",    "group": "announcements" },
+          { "pattern": "/faq",                "group": "docs" },
+          { "pattern": "/feature",            "group": "docs" },
+          { "pattern": "/markdown-guide",     "group": "docs" },
+          { "pattern": "/release-notes",      "group": "docs" },
+          { "pattern": "/terms",              "group": "legal" },
+          { "pattern": "/privacy",            "group": "legal" },
+          { "pattern": "/admin**",            "group": "admin" }
         ],
         "*": [
           { "pattern": "/", "group": "home" }
