@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ブランチ push の CI（ci.yml）で、どのジョブ（checks / image）を回すかを決める。
+# ブランチ push の CI（ci.yml）で、どのジョブ（checks / e2e）を回すかを決める。
 # main との差分ファイルを見て、変更が影響しうるジョブだけ true にする。
 #
 # 方針（docs/development.md「CI」）:
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 checks=false
-image=false
+e2e=false
 
 base="$(git merge-base origin/main HEAD)"
 while IFS= read -r file; do
@@ -26,13 +26,14 @@ while IFS= read -r file; do
     .github/workflows/docker-build.yml) ;;
     # ワークフロー単体の変更（Actions の更新など）は、それを使うジョブだけ
     .github/workflows/checks.yml) checks=true ;;
-    .github/workflows/image.yml | Dockerfile) image=true ;;
-    *) checks=true; image=true ;;
+    # 本番イメージの中身と、それを起動して確かめるスモーク（compose・スクリプト）
+    .github/workflows/e2e.yml | Dockerfile | .dockerignore | compose.yaml | e2e/*) e2e=true ;;
+    *) checks=true; e2e=true ;;
   esac
 done < <(git diff --name-only "$base" HEAD)
 
 out="${GITHUB_OUTPUT:-/dev/stdout}"
 {
   echo "checks=$checks"
-  echo "image=$image"
+  echo "e2e=$e2e"
 } >> "$out"

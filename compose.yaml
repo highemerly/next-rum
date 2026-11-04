@@ -1,0 +1,29 @@
+# E2E スモーク（e2e/smoke.sh）用。本番と同じイメージを、本番（deploy/k8s/deployment.yaml）と同じ
+# 環境変数・設定ファイル・権限で起動する。CI（.github/workflows/e2e.yml）も手元も同じ手順で動く：
+#   docker compose up -d --build
+#   curl -fsS --retry 30 --retry-connrefused --retry-delay 1 -o /dev/null http://127.0.0.1:${E2E_PORT:-18480}/healthz
+#   bash e2e/smoke.sh
+#   docker compose down
+services:
+  collector:
+    # CI はビルド済み（タグ時は push 済み）のイメージを E2E_IMAGE で渡し、--no-build で起動する。
+    image: ${E2E_IMAGE:-next-rum:e2e}
+    build: .
+    ports:
+      - "127.0.0.1:${E2E_PORT:-18480}:8080"
+    environment:
+      # 数字だけの値は引用符で囲む（YAML で整数になると compose が受け付けない）
+      LISTEN_ADDR: ":8080"
+      CONFIG_PATH: /etc/rum/rum-config.json
+      ASSET_MAX_AGE_SECONDS: "300"
+      CONFIG_RELOAD_SECONDS: "60"
+      GEO_COUNTRY_HEADER: "CF-IPCountry"
+      GEO_ASN_HEADER: "HAN-CF-ASN"
+    # 本番の ConfigMap と同じ中身（config_sync_test が一致を見ている）
+    volumes:
+      - ./assets/rum-config.json:/etc/rum/rum-config.json:ro
+    # 本番の securityContext（readOnlyRootFilesystem・capabilities を全部落とす・権限昇格なし）に揃える
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true

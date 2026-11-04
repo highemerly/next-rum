@@ -60,15 +60,15 @@ gh api -X PATCH repos/highemerly/next-rum \
 
 ### PR が来たら
 
-1. CI（`ci-result`）が緑か見る。赤なら ruleset でマージできない。go.mod と Go のソースの変更は checks と image が両方走り、Dockerfile だけの変更は image だけが走る。
+1. CI（`ci-result`）が緑か見る。赤なら ruleset でマージできない。go.mod と Go のソースの変更は checks と e2e が両方走り、Dockerfile だけの変更は e2e だけが走る。
 2. PR 本文の変更履歴（Renovate が載せる）を読む。go.mod / go.sum の差分で、実際に入る版が変わっているかを見る（`go mod tidy` で間接依存も動くことがある）。
-3. 種類に応じて確認を足す。CI が見ているのは gofmt・`go vet`・unit テスト（`go test -race`）と、本番イメージがビルドできることまで（起動はまだ確かめていない）：
+3. 種類に応じて確認を足す。CI が見ているのは gofmt・`go vet`・unit テスト（`go test -race`）と、本番イメージを本番と同じ設定・権限で起動しての API スモーク（`e2e/smoke.sh`：配信物・CORS・`/collect` から `/metrics` のテキスト出力まで）：
 
    | 種類 | 例 | マージ前の確認 |
    |---|---|---|
-   | メトリクス | `prometheus/client_golang`・`prometheus/common`・`client_model` | unit テストはレジストリの値（`Gather`）までで、**`/metrics` のテキスト出力は見ていない**。common は 0.x で、マイナーでも出力（名前のエスケープ・Content-Type の交渉）を変え得るのに Renovate はメジャー扱いしない。変更履歴を読み、マージ後に本番の `/metrics` を VictoriaMetrics が取れているか見る |
-   | Go の版 | Go グループ | checks・image が緑ならマージ。マイナー（1.26 → 1.27）はリリースノートで net/http の挙動の変更を見る |
-   | ベースイメージ | `distroless` の digest | ビルドまでしか見ていない。静的バイナリを動かすだけなので壊れにくいが、マージ後のリリースでは Pod が起動したかを見る（deploy/k8s/README.md の確認手順） |
+   | メトリクス | `prometheus/client_golang`・`prometheus/common`・`client_model` | e2e が `/metrics` のテキスト出力で主な系列の名前・ラベル・値を見ているので、緑ならマージ。common は 0.x で、マイナーでも出力（名前のエスケープ・Content-Type の交渉）を変え得るのに Renovate はメジャー扱いしない。e2e が見ていない系列もあるので変更履歴は読む |
+   | Go の版 | Go グループ | checks・e2e が緑ならマージ。マイナー（1.26 → 1.27）はリリースノートで net/http の挙動の変更を見る |
+   | ベースイメージ | `distroless` の digest | e2e が本番と同じ権限（非 root・読み取り専用のルート）で起動して確かめるので、緑ならマージ |
    | リンクされているが使っていないもの | `prometheus/procfs`・`golang.org/x/sys`（プロセスや Go ランタイムのメトリクスは登録していない） | CI 緑ならマージ |
    | タグ時にしか動かない Actions | docker/login-action・docker/metadata-action・peter-evans/create-pull-request | PR の CI では実行されない。マージ後、次のリリースの docker-build.yml で初めて動く |
 4. squash マージする。
@@ -105,10 +105,10 @@ gh api -X PATCH repos/highemerly/next-rum \
 |---|---|---|
 | [ci.yml](../.github/workflows/ci.yml) | main 以外のブランチへの push | 差分を見て、下の2つのうち必要なものだけ呼ぶ。結果は `ci-result` にまとめる |
 | [checks.yml](../.github/workflows/checks.yml) | ci.yml とタグから呼ばれる | gofmt / go vet / `go test -race` |
-| [image.yml](../.github/workflows/image.yml) | ci.yml から呼ばれる | 本番イメージのビルド（push しない）。ベースイメージや Dockerfile の変更を、タグを打つ前に確かめる |
-| [docker-build.yml](../.github/workflows/docker-build.yml) | `v*` タグ | checks とイメージのビルド・push を並走させ、両方緑なら k8sg1-repo へ PR（README「Release / deploy」） |
+| [e2e.yml](../.github/workflows/e2e.yml) | ci.yml とタグから呼ばれる | 本番イメージを [compose.yaml](../compose.yaml) で起動し、API スモーク（[e2e/smoke.sh](../e2e/smoke.sh)）を回す。ブランチではビルド（push しない）から、タグでは push 済みのイメージで |
+| [docker-build.yml](../.github/workflows/docker-build.yml) | `v*` タグ | checks とイメージのビルド・push を並走させ、push したイメージで e2e を回し、全部緑なら k8sg1-repo へ PR（README「Release / deploy」） |
 
-ジョブの定義は checks.yml・image.yml の1か所に置き、ブランチ用とタグ用の両方から呼ぶ。
+ジョブの定義は checks.yml・e2e.yml の1か所に置き、ブランチ用とタグ用の両方から呼ぶ。
 
 main への push では CI を回さない。マージ前に同じ中身をブランチで通しているので、main でも回すとほぼ二重実行になる（しかも続けてマージすると、concurrency のキャンセルで途中の実行が捨てられる）。
 
@@ -116,12 +116,12 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 
 [.github/scripts/ci-targets.sh](../.github/scripts/ci-targets.sh) が main との merge-base からの差分ファイルを見て決める。手元でも `.github/scripts/ci-targets.sh` で試せる（標準出力に出る）。
 
-| 変更したファイル | checks | image |
+| 変更したファイル | checks | e2e |
 |---|---|---|
 | Go のソース・go.mod / go.sum・assets・ci.yml・ci-targets.sh | 回す | 回す |
 | `deploy/k8s/configmap.yaml`（config_sync_test が見ている） | 回す | |
 | checks.yml | 回す | |
-| Dockerfile・image.yml | | 回す |
+| Dockerfile・`.dockerignore`・compose.yaml・`e2e/`・e2e.yml | | 回す |
 | ドキュメント・`.claude/`・`.githooks/`・ruleset・Renovate の設定・`.gitignore`・`.tool-versions` | | |
 | `deploy/` のその他・`testdata/`（手で反映するもの・手元の動作確認用） | | |
 | docker-build.yml（タグでしか動かず、ブランチでは確かめようがない） | | |
@@ -136,6 +136,26 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 ジョブを個別に必須にすると、差分でスキップされたジョブに結果が付かず、PR がマージできなくなる。`ci-result` は全ジョブを `needs` に持ち、成功とスキップは通し、失敗とキャンセルは落とす。
 
 必須でないチェックは auto-merge も ruleset も待たない。マージ前に見たい検査は全部 `ci-result` の `needs` に入れる。
+
+### E2E スモーク
+
+本番イメージを [compose.yaml](../compose.yaml) で、本番（deploy/k8s/deployment.yaml）と同じ環境変数・設定ファイル（`assets/rum-config.json`＝ConfigMap と同じ中身）・権限（非 root・読み取り専用のルート・capabilities なし）で起動し、[e2e/smoke.sh](../e2e/smoke.sh) が curl で叩く。
+
+- 見ているもの：`/healthz`、配信物（beacon.js・web-vitals.js・rum-config.json の中身・Content-Type・CORS・Cache-Control）、`/collect` の CORS、`/collect` に送ったイベントが `/metrics` のテキスト出力に出ること（主な系列の名前・ラベル・値）。
+- 送るものは beacon.js が実際に送るものと同じ形にしている（`sendBeacon` に text/plain の Blob、`Origin` 付き、読み込み時は配列・離脱時の1件はオブジェクト）。beacon.js の送り方を変えたら smoke.sh も合わせる。
+- ブラウザでの確認（beacon.js が例外なく動くか）はまだ無い。
+- 画面操作やリトライは入れない。起動待ちだけは、distroless にシェルが無くコンテナ内の healthcheck が書けないので、外から `/healthz` を curl で待つ。
+
+手元で回す（ポート 18480 が塞がっていれば `E2E_PORT` で変える）：
+
+```bash
+docker compose up -d --build
+curl -fsS --retry 30 --retry-connrefused --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
+bash e2e/smoke.sh
+docker compose down
+```
+
+カウンタは実行前後の差で見るので、同じコンテナに何度流してもよい。
 
 ## リリース
 
