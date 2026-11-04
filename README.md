@@ -93,6 +93,13 @@ deploy/
 
 ## Develop
 
+Once per clone, enable the hook that refuses commits on `main`
+(see [docs/development.md](docs/development.md)):
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ```bash
 # Run locally against the checked-in config (Loki disabled).
 CONFIG_PATH=assets/rum-config.json LISTEN_ADDR=:8080 go run ./cmd/rum-collector
@@ -157,9 +164,12 @@ One line, identical on every service:
 
 ## Release / deploy
 
-Tag-driven, same flow as the other services (movapic-neo / nmd):
+Tag-driven, same flow as the other services (movapic-neo / nmd). Changes reach
+`main` only through squash-merged PRs (branch rules and setup:
+[docs/development.md](docs/development.md)); the tag goes on `main`:
 
 ```bash
+git switch main && git pull
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
