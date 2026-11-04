@@ -36,6 +36,13 @@ gh api -X PUT repos/highemerly/next-rum/rulesets/<id> --input .github/rulesets/m
 | マージ後のブランチ | 自動で削除 | |
 | auto-merge | 有効 | Renovate の PR などを、CI が緑になったら取り込めるように |
 
+```bash
+gh api -X PATCH repos/highemerly/next-rum \
+  -F allow_merge_commit=false -F allow_rebase_merge=false -F allow_squash_merge=true \
+  -F allow_auto_merge=true -F delete_branch_on_merge=true \
+  -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=BLANK
+```
+
 ## リリース
 
 変更は PR で main に入れておき、タグは main の先頭に打つ（タグは ruleset の対象外）：
