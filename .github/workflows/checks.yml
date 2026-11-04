@@ -1,7 +1,7 @@
 name: Checks
 
 # gofmt / go vet / go test を回す再利用可能ワークフロー。
-# ci.yml（ブランチ push）と docker-build.yml（タグ push でビルドと並走）の両方から呼ぶ。
+# ci.yml（ブランチ push・差分で必要なときだけ）と docker-build.yml（タグ push でビルドと並走）の両方から呼ぶ。
 # CI ステップの単一の定義元。
 on:
   workflow_call:
@@ -13,10 +13,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true

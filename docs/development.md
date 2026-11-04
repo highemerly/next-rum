@@ -43,6 +43,46 @@ gh api -X PATCH repos/highemerly/next-rum \
   -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=BLANK
 ```
 
+## CI
+
+### ワークフロー
+
+| ファイル | いつ | 何を |
+|---|---|---|
+| [ci.yml](../.github/workflows/ci.yml) | main 以外のブランチへの push | 差分を見て、下の2つのうち必要なものだけ呼ぶ。結果は `ci-result` にまとめる |
+| [checks.yml](../.github/workflows/checks.yml) | ci.yml とタグから呼ばれる | gofmt / go vet / `go test -race` |
+| [image.yml](../.github/workflows/image.yml) | ci.yml から呼ばれる | 本番イメージのビルド（push しない）。ベースイメージや Dockerfile の変更を、タグを打つ前に確かめる |
+| [docker-build.yml](../.github/workflows/docker-build.yml) | `v*` タグ | checks とイメージのビルド・push を並走させ、両方緑なら k8sg1-repo へ PR（README「Release / deploy」） |
+
+ジョブの定義は checks.yml・image.yml の1か所に置き、ブランチ用とタグ用の両方から呼ぶ。
+
+main への push では CI を回さない。マージ前に同じ中身をブランチで通しているので、main でも回すとほぼ二重実行になる（しかも続けてマージすると、concurrency のキャンセルで途中の実行が捨てられる）。
+
+### ブランチでは差分が影響しうるジョブだけ回す
+
+[.github/scripts/ci-targets.sh](../.github/scripts/ci-targets.sh) が main との merge-base からの差分ファイルを見て決める。手元でも `.github/scripts/ci-targets.sh` で試せる（標準出力に出る）。
+
+| 変更したファイル | checks | image |
+|---|---|---|
+| Go のソース・go.mod / go.sum・assets・ci.yml・ci-targets.sh | 回す | 回す |
+| `deploy/k8s/configmap.yaml`（config_sync_test が見ている） | 回す | |
+| checks.yml | 回す | |
+| Dockerfile・image.yml | | 回す |
+| ドキュメント・`.claude/`・`.githooks/`・ruleset・Renovate の設定・`.gitignore`・`.tool-versions` | | |
+| `deploy/` のその他・`testdata/`（手で反映するもの・手元の動作確認用） | | |
+| docker-build.yml（タグでしか動かず、ブランチでは確かめようがない） | | |
+| 上のどれにも当たらないもの | 回す | 回す |
+
+新しい種類のファイルを足したら、この表とスクリプトを見直す。一覧に無いものは全部回るので、漏れても検査が抜けることはない（遅くなるだけ）。
+
+タグ（リリース）ではブランチで省いた検査も全部回り、全部緑のときだけ k8sg1-repo へ PR が出る。
+
+### 必須チェックは `ci-result` の1つだけ
+
+ジョブを個別に必須にすると、差分でスキップされたジョブに結果が付かず、PR がマージできなくなる。`ci-result` は全ジョブを `needs` に持ち、成功とスキップは通し、失敗とキャンセルは落とす。
+
+必須でないチェックは auto-merge も ruleset も待たない。マージ前に見たい検査は全部 `ci-result` の `needs` に入れる。
+
 ## リリース
 
 変更は PR で main に入れておき、タグは main の先頭に打つ（タグは ruleset の対象外）：
