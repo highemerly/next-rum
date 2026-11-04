@@ -1,0 +1,54 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  // docker:pinDigests: ベースイメージ（golang・distroless）を digest で固定する。タグのままだと
+  // ベースイメージの更新がリリース時のビルドで無言で入る。固定すると digest の更新が PR になり、
+  // CI（image ジョブ）でビルドを通してから取り込める。
+  extends: ['config:recommended', 'docker:pinDigests'],
+  timezone: 'Asia/Tokyo',
+  // 週2回にまとめる（毎日 PR が来ると確認が追いつかず、週1だと間隔が空きすぎる）。
+  schedule: ['before 9am on monday and thursday'],
+  labels: ['dependencies'],
+  // Go モジュールの更新後に go mod tidy を回し、go.sum と require の直接/間接を正しく保つ。
+  postUpdateOptions: ['gomodTidy'],
+  // メジャーはコード側の対応が要るので、着手するときに Dependency Dashboard で承認して PR を作らせる
+  // （自動で並ぶと、対応できないまま毎週 rebase される PR が溜まる）。
+  major: {
+    dependencyDashboardApproval: true,
+  },
+  packageRules: [
+    {
+      // 乗っ取られて公開された版は数日以内に取り下げられることが多いため、公開から3日待つ。
+      // Go モジュールに限る（Docker の digest には公開日時が無く、待てないため）。
+      matchDatasources: ['go'],
+      minimumReleaseAge: '3 days',
+    },
+    {
+      // Go の版は go.mod（go ディレクティブ。CI の setup-go も go-version-file でこれを読む）・
+      // Dockerfile（golang）・.tool-versions を揃えて上げる必要があるため1つの PR にまとめる。
+      matchDepNames: ['go', 'golang'],
+      groupName: 'Go',
+    },
+    {
+      // go.mod の go ディレクティブは既定では範囲（下限）として扱われ、上げられない。
+      // Dockerfile・.tool-versions だけが上がって CI（setup-go）と版がずれるのを防ぐため、一緒に上げる。
+      matchDatasources: ['golang-version'],
+      matchDepTypes: ['golang'],
+      rangeStrategy: 'bump',
+    },
+    {
+      // 間接依存（golang.org/x/sys など）は既定では更新されない。gomod は lockFileMaintenance に
+      // 対応していないので、その代わりに週1で1つの PR にまとめて上げる。
+      matchManagers: ['gomod'],
+      matchDepTypes: ['indirect'],
+      enabled: true,
+      groupName: 'Go indirect dependencies',
+      schedule: ['before 9am on monday'],
+    },
+    {
+      // Misskey 用の Cloudflare Worker。lockfile も CI も無く、wrangler で手でデプロイしているので、
+      // PR が来ても確かめようがない。上げるときは手で wrangler を上げてデプロイする。
+      matchFileNames: ['deploy/cloudflare-worker/**'],
+      enabled: false,
+    },
+  ],
+}
