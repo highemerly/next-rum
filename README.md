@@ -178,7 +178,9 @@ git tag v0.1.0 && git push origin v0.1.0
 opens a PR against `highemerly/k8sg1-repo` bumping the `image:` line in
 `manifests/rum/prd/deployment.yaml`. Merging that PR lets Flux roll it out.
 
-Branch pushes run `ci.yml` → the same `checks.yml`, so CI never runs twice.
+Branch pushes (not `main`) run `ci.yml`: the same `checks.yml` plus an image
+build without push, each only when the diff can affect it. See
+[docs/development.md](docs/development.md#ci).
 
 First-time cluster setup (namespace, cert, Flux Kustomization, DNS, `K8SG1_PAT`)
 and the post-rollout verification runbook: **[deploy/k8s/README.md](deploy/k8s/README.md)**.
