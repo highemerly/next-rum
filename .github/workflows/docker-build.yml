@@ -19,10 +19,18 @@ env:
   K8S_MANIFEST_PATHS: "manifests/rum/prd/deployment.yaml"
 
 jobs:
-  # CI（gofmt / vet / test）。build-and-push と並走し、両方緑になって初めて
+  # CI（gofmt / vet / test）。build-and-push と並走し、e2e と合わせて全部緑になって初めて
   # create-k8s-pr が走る（下の needs 参照）。定義は checks.yml に集約。
   checks:
     uses: ./.github/workflows/checks.yml
+
+  # push したイメージそのもの（＝デプロイするもの）で API スモークを回す。ブランチでは差分で
+  # 省いていたかもしれないので、タグでは必ず回す。定義は e2e.yml に集約。
+  e2e:
+    needs: build-and-push
+    uses: ./.github/workflows/e2e.yml
+    with:
+      image: ${{ needs.build-and-push.outputs.image }}
 
   build-and-push:
     runs-on: ubuntu-latest
@@ -31,6 +39,7 @@ jobs:
       packages: write
     outputs:
       version: ${{ steps.version.outputs.version }}
+      image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -81,8 +90,8 @@ jobs:
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true,compression=zstd,compression-level=3
 
   create-k8s-pr:
-    # ビルドと CI が両方成功したときだけ k8s マニフェストへ PR する。
-    needs: [build-and-push, checks]
+    # ビルド・CI・push したイメージでの e2e が全部成功したときだけ k8s マニフェストへ PR する。
+    needs: [build-and-push, checks, e2e]
     runs-on: ubuntu-latest
     permissions:
       contents: read

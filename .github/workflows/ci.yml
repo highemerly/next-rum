@@ -1,11 +1,11 @@
 name: CI
 
 # テストゲート。main 以外のブランチへの push で、変更が影響しうるジョブだけを回す
-# （checks.yml＝gofmt / vet / test・image.yml＝本番イメージのビルド（push なし））。
+# （checks.yml＝gofmt / vet / test・e2e.yml＝本番イメージをビルド（push なし）して起動し、API スモーク）。
 # どれを回すかは .github/scripts/ci-targets.sh が main との差分から決める（方針は docs/development.md「CI」）。
 #
 # main への push では回さない: squash マージ前に同じ中身をブランチで通しており、リリース時（タグ push）に
-# docker-build.yml が checks とイメージのビルドを全部回してからでないとデプロイの PR を出さないため。
+# docker-build.yml が checks・e2e を全部回してからでないとデプロイの PR を出さないため。
 on:
   push:
     branches:
@@ -24,7 +24,7 @@ jobs:
       contents: read
     outputs:
       checks: ${{ steps.targets.outputs.checks }}
-      image: ${{ steps.targets.outputs.image }}
+      e2e: ${{ steps.targets.outputs.e2e }}
     steps:
       # main との merge-base を取るため履歴ごと取る（既定の depth=1 だと origin/main が無い）。
       - name: Checkout repository
@@ -41,17 +41,17 @@ jobs:
     if: needs.changes.outputs.checks == 'true'
     uses: ./.github/workflows/checks.yml
 
-  image:
+  e2e:
     needs: changes
-    if: needs.changes.outputs.image == 'true'
-    uses: ./.github/workflows/image.yml
+    if: needs.changes.outputs.e2e == 'true'
+    uses: ./.github/workflows/e2e.yml
 
   # main の ruleset の必須チェックはこのジョブだけ。ジョブを差分で間引くと、スキップされたジョブには
   # 結果が付かず、個別に必須にしているとマージできなくなるため、結果をここで1つにまとめる。
   # 成功とスキップは通し、失敗とキャンセル（タイムアウト等）は落とす。実行ごとキャンセルされたとき
   # （同じブランチへの新しい push）は走らせない＝古いコミットに失敗を付けない。
   ci-result:
-    needs: [changes, checks, image]
+    needs: [changes, checks, e2e]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:

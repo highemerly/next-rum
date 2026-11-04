@@ -174,13 +174,14 @@ git tag v0.1.0 && git push origin v0.1.0
 ```
 
 `.github/workflows/docker-build.yml` runs `checks` (gofmt/vet/test) and
-`build-and-push` (ghcr.io, `linux/amd64`) in parallel; when both are green it
-opens a PR against `highemerly/k8sg1-repo` bumping the `image:` line in
+`build-and-push` (ghcr.io, `linux/amd64`) in parallel, then an API smoke test
+(`e2e/smoke.sh`) against the pushed image; when all are green it opens a PR against `highemerly/k8sg1-repo` bumping the `image:` line in
 `manifests/rum/prd/deployment.yaml`. Merging that PR lets Flux roll it out.
 
-Branch pushes (not `main`) run `ci.yml`: the same `checks.yml` plus an image
-build without push, each only when the diff can affect it. See
-[docs/development.md](docs/development.md#ci).
+Branch pushes (not `main`) run `ci.yml`: the same `checks.yml` plus the smoke
+test on an image built without push, each only when the diff can affect it. See
+[docs/development.md](docs/development.md#ci) (also how to run the smoke test
+locally with `docker compose`).
 
 First-time cluster setup (namespace, cert, Flux Kustomization, DNS, `K8SG1_PAT`)
 and the post-rollout verification runbook: **[deploy/k8s/README.md](deploy/k8s/README.md)**.

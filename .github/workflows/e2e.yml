@@ -1,0 +1,59 @@
+name: E2E
+
+# 本番イメージを compose.yaml で起動し、API スモーク（e2e/smoke.sh）を回す再利用可能ワークフロー。
+# ci.yml（ブランチ push・差分で必要なときだけ。イメージはここでビルドし、push しない）と
+# docker-build.yml（タグ push・push 済みのイメージで）から呼ぶ。手元でも同じ手順で動く（compose.yaml の先頭）。
+on:
+  workflow_call:
+    inputs:
+      # 指定するとビルドせず、このイメージ（push 済み・public）で回す。タグ時に、デプロイするイメージ
+      # そのものを確かめるため（作り直したイメージで通っても、本番に出すものの確認にならない）。
+      image:
+        type: string
+        default: ''
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # compose.yaml の collector が使うイメージ
+      E2E_IMAGE: ${{ inputs.image || 'next-rum:e2e' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        if: ${{ !inputs.image }}
+        uses: docker/setup-buildx-action@v4
+
+      # タグ時のビルド（docker-build.yml）が積む buildcache を読む（パッケージは public なので認証は要らない）。
+      # 書き込みはタグ時だけにする（ブランチの途中の状態でキャッシュを上書きしない）。
+      - name: Build production image (no push)
+        if: ${{ !inputs.image }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: next-rum:e2e
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+
+      - name: Pull pushed image
+        if: ${{ inputs.image }}
+        run: docker pull "$E2E_IMAGE"
+
+      # distroless にはシェルも curl も無く、コンテナ内の healthcheck が書けないので、外から /healthz を待つ。
+      # --no-build: ビルド済み（または pull 済み）の E2E_IMAGE をそのまま使う
+      - name: Start collector
+        run: |
+          docker compose up -d --no-build
+          curl -fsS --retry 30 --retry-connrefused --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
+
+      - name: Run API smoke
+        run: bash e2e/smoke.sh
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
