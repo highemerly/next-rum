@@ -44,6 +44,59 @@ gh api -X PATCH repos/highemerly/next-rum \
   -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=BLANK
 ```
 
+## 依存更新（Renovate）
+
+依存は Renovate（GitHub App）が出す PR で上げる。設定は [.github/renovate.json5](../.github/renovate.json5)（各ルールの理由はコメント参照）。
+
+- **毎週月曜・木曜の 9時前（JST）** にまとめて PR が来る（Go の間接依存の一括更新は月曜のみ）。自動マージはしない。
+- **メジャー更新**は PR が自動では来ず、Issue「Dependency Dashboard」の Pending Approval に並ぶ（コード側の対応が要るため）。
+- 1つの PR にまとまるもの：
+  - **Go**：go.mod の `go` ディレクティブ・Dockerfile の `golang:X.Y.Z`・`.tool-versions`（CI の setup-go は go.mod を読むので、揃えないと CI とイメージで版がずれる）
+  - **Go indirect dependencies**：go.mod の `// indirect`（`golang.org/x/sys` など。gomod は lockFileMaintenance に対応していないので、その代わり）
+- Go モジュールは公開から3日待ってから PR になる（乗っ取られて公開された版は数日以内に取り下げられることが多いため）。
+- ベースイメージ（`golang`・`distroless`）と Dockerfile の syntax は digest で固定。中身の更新は digest 更新の PR として来る。
+- **Debian のリリース（`static-debian12` → `13`）は Renovate が提案しない**（イメージ名が変わるため）。distroless のサポート状況を見て手で上げる。
+- 対象外：`deploy/cloudflare-worker`（lockfile も CI も無く、wrangler で手でデプロイしている）と `assets/web-vitals.js`（手で同梱している）。上げるときは手で。
+
+### PR が来たら
+
+1. CI（`ci-result`）が緑か見る。赤なら ruleset でマージできない。go.mod と Go のソースの変更は checks と image が両方走り、Dockerfile だけの変更は image だけが走る。
+2. PR 本文の変更履歴（Renovate が載せる）を読む。go.mod / go.sum の差分で、実際に入る版が変わっているかを見る（`go mod tidy` で間接依存も動くことがある）。
+3. 種類に応じて確認を足す。CI が見ているのは gofmt・`go vet`・unit テスト（`go test -race`）と、本番イメージがビルドできることまで（起動はまだ確かめていない）：
+
+   | 種類 | 例 | マージ前の確認 |
+   |---|---|---|
+   | メトリクス | `prometheus/client_golang`・`prometheus/common`・`client_model` | unit テストはレジストリの値（`Gather`）までで、**`/metrics` のテキスト出力は見ていない**。common は 0.x で、マイナーでも出力（名前のエスケープ・Content-Type の交渉）を変え得るのに Renovate はメジャー扱いしない。変更履歴を読み、マージ後に本番の `/metrics` を VictoriaMetrics が取れているか見る |
+   | Go の版 | Go グループ | checks・image が緑ならマージ。マイナー（1.26 → 1.27）はリリースノートで net/http の挙動の変更を見る |
+   | ベースイメージ | `distroless` の digest | ビルドまでしか見ていない。静的バイナリを動かすだけなので壊れにくいが、マージ後のリリースでは Pod が起動したかを見る（deploy/k8s/README.md の確認手順） |
+   | リンクされているが使っていないもの | `prometheus/procfs`・`golang.org/x/sys`（プロセスや Go ランタイムのメトリクスは登録していない） | CI 緑ならマージ |
+   | タグ時にしか動かない Actions | docker/login-action・docker/metadata-action・peter-evans/create-pull-request | PR の CI では実行されない。マージ後、次のリリースの docker-build.yml で初めて動く |
+4. squash マージする。
+5. 手元で取り込む：
+   ```bash
+   git switch main && git pull
+   go mod download
+   ```
+   `.tool-versions` の golang が上がったときは `asdf install` も行う。
+
+### 承認待ち（メジャー）の片付け方
+
+- 着手するときに Dashboard のチェックを入れる → PR が作られる。一度に多く承認せず1つずつ。
+- CI が落ちたら、その Renovate のブランチ（`renovate/...`）に直接コミットを足して直す。人のコミットが入ったブランチは Renovate が以後書き換えない。
+
+### その他
+
+- 今は要らない更新：PR を閉じる（その版は作り直されない。次の版が出れば再び PR になる）。恒久的に止めるなら renovate.json5 にルールを足す。
+- 急ぐ更新（セキュリティ修正など）：Dashboard の Awaiting Schedule でチェックを入れると、スケジュールを待たずに PR が作られる。
+- 手元で `go get -u` はしない（Renovate の PR とぶつかる）。依存の追加はブランチを切って PR で。
+- 設定を変えたら検証する（ファイルを引数に渡すとグローバル設定として検証されるので、引数なしで）：
+  ```bash
+  npx -p renovate renovate-config-validator --strict
+  # どの PR に分かれるかの模擬実行（未コミットの設定も読ませる）
+  GITHUB_COM_TOKEN=$(gh auth token) RENOVATE_CONFIG_FILE=.github/renovate.json5 \
+    npx -p renovate renovate --platform=local --dry-run=lookup
+  ```
+
 ## CI
 
 ### ワークフロー
