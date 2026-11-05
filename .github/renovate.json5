@@ -15,11 +15,16 @@
   major: {
     dependencyDashboardApproval: true,
   },
+  // e2e/browser の package-lock.json（Playwright の間接依存）を週1で作り直す。gomod には効かない（下の
+  // Go indirect dependencies が代わり）。
+  lockFileMaintenance: {
+    enabled: true,
+  },
   packageRules: [
     {
       // 乗っ取られて公開された版は数日以内に取り下げられることが多いため、公開から3日待つ。
-      // Go モジュールに限る（Docker の digest には公開日時が無く、待てないため）。
-      matchDatasources: ['go'],
+      // Go モジュールと npm（e2e/browser の Playwright）に限る（Docker の digest には公開日時が無く、待てないため）。
+      matchDatasources: ['go', 'npm'],
       minimumReleaseAge: '3 days',
     },
     {

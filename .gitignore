@@ -12,6 +12,9 @@ coverage.*
 node_modules/
 .wrangler/
 
+# Playwright (e2e/browser) の出力。outputDir は playwright.config.ts で固定している
+/e2e/browser/test-results/
+
 # Editor / OS
 .DS_Store
 *.swp

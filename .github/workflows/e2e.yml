@@ -54,6 +54,30 @@ jobs:
       - name: Run API smoke
         run: bash e2e/smoke.sh
 
+      # ブラウザでの確認（e2e/browser）。smoke.sh の後に回す: ブラウザのビーコンは smoke.sh が差で見ている
+      # カウンタ（rum_collector_received_total）にも数えられるため。smoke.sh は最後にコレクタを止めるので起こし直す。
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/browser/package-lock.json
+
+      - name: Install Playwright
+        working-directory: e2e/browser
+        run: |
+          npm ci
+          npx playwright install --with-deps --only-shell chromium
+
+      - name: Restart collector
+        run: |
+          docker compose start collector
+          curl -fsS --retry 30 --retry-all-errors --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
+
+      - name: Run browser smoke
+        working-directory: e2e/browser
+        run: npx playwright test
+
       - name: Show logs on failure
         if: failure()
         run: docker compose logs
