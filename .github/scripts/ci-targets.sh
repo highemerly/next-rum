@@ -15,8 +15,8 @@ e2e=false
 base="$(git merge-base origin/main HEAD)"
 while IFS= read -r file; do
   case "$file" in
-    # 動作に影響しないもの（ドキュメント・Claude Code の設定・ローカル hook・GitHub の設定・手元用の設定）
-    *.md | docs/* | .claude/* | .githooks/* | .github/rulesets/* | .github/renovate.json5 | .gitignore | .tool-versions) ;;
+    # 動作に影響しないもの（ドキュメント・Claude Code の設定・ローカル hook・GitHub の設定・リリースノートの分類・手元用の設定）
+    *.md | docs/* | .claude/* | .githooks/* | .github/rulesets/* | .github/renovate.json5 | .github/release.yml | .gitignore | .tool-versions) ;;
     # 手で反映している設定とマニフェスト（Grafana・vmalert・Traefik・Cloudflare）と、
     # 手元の動作確認用（README「Local end-to-end」）。どれもイメージにもテストにも入らない
     deploy/* | testdata/*) ;;

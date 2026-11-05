@@ -174,14 +174,17 @@ release below. Pushing a tag by hand does the same:
 
 ```bash
 git switch main && git pull
-git tag v0.1.5 && git push origin v0.1.5
+git tag v0.1.6 && git push origin v0.1.6
 ```
 
 `.github/workflows/docker-build.yml` runs `checks` (gofmt/vet/test) and
-`build-and-push` (ghcr.io, `linux/amd64`) in parallel, then an API smoke test
-(`e2e/smoke.sh`) against the pushed image; when all are green it opens a PR
-against the manifest repository bumping the `image:` line. Merging that PR lets
-Flux roll it out.
+`build` (pushes to ghcr.io, `linux/amd64`) in parallel, then the E2E smoke tests
+against the pushed image. When all are green it creates a GitHub Release with
+auto-generated notes (the PRs merged since the previous tag, grouped by
+`.github/release.yml` into Changes and Dependencies) and opens a PR against the
+manifest repository bumping the `image:` line, with the same notes in its body
+(label `app-update`, assigned to the owner). Merging that PR lets Flux roll it
+out.
 
 The Kubernetes manifests (Deployment, ConfigMap, IngressRoute, VMServiceScrape)
 and the cluster-side runbook (first-time setup, rollout checks, rollback) live
