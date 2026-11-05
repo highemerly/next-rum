@@ -15,6 +15,9 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    # 既定は 360 分。固まったとき（下の Install Playwright）に6時間待たず、早く赤にして Re-run できるように。
+    # ふだんは 1〜2 分
+    timeout-minutes: 15
     permissions:
       contents: read
     env:
@@ -63,8 +66,11 @@ jobs:
           cache: npm
           cache-dependency-path: e2e/browser/package-lock.json
 
+      # --with-deps の apt-get は Ubuntu のミラーが遅いと固まる（2026-11-05 にフォントのダウンロードが
+      # 毎秒 40KB ほどになり、7分たっても終わらなかった）。ふだんは 15 秒ほど
       - name: Install Playwright
         working-directory: e2e/browser
+        timeout-minutes: 5
         run: |
           npm ci
           npx playwright install --with-deps --only-shell chromium

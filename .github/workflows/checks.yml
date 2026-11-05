@@ -9,6 +9,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # 既定は 360 分。固まったときに早く赤にして Re-run できるように（ふだんは 30 秒ほど）
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
