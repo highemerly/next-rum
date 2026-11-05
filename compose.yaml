@@ -1,4 +1,4 @@
-# E2E スモーク（e2e/smoke.sh）用。本番と同じイメージを、本番（deploy/k8s/deployment.yaml）と同じ
+# E2E スモーク（e2e/smoke.sh）用。本番と同じイメージを、本番のマニフェストと同じ
 # 環境変数・設定ファイル・権限で起動する。CI（.github/workflows/e2e.yml）も手元も同じ手順で動く：
 #   docker compose up -d --build
 #   curl -fsS --retry 30 --retry-all-errors --retry-delay 1 -o /dev/null http://127.0.0.1:${E2E_PORT:-18480}/healthz
@@ -24,7 +24,7 @@ services:
     depends_on:
       loki:
         condition: service_healthy
-    # 本番の ConfigMap と同じ中身（config_sync_test が一致を見ている）
+    # 本番の ConfigMap と同じ中身（ConfigMap は非公開のマニフェストのリポジトリにあり、手で揃えている）
     volumes:
       - ./assets/rum-config.json:/etc/rum/rum-config.json:ro
     # 本番の securityContext（readOnlyRootFilesystem・capabilities を全部落とす・権限昇格なし）に揃える
