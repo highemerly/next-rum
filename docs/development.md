@@ -53,7 +53,8 @@ gh api -X PATCH repos/highemerly/next-rum \
 - 1つの PR にまとまるもの：
   - **Go**：go.mod の `go` ディレクティブ・Dockerfile の `golang:X.Y.Z`・`.tool-versions`（CI の setup-go は go.mod を読むので、揃えないと CI とイメージで版がずれる）
   - **Go indirect dependencies**：go.mod の `// indirect`（`golang.org/x/sys` など。gomod は lockFileMaintenance に対応していないので、その代わり）
-- Go モジュールは公開から3日待ってから PR になる（乗っ取られて公開された版は数日以内に取り下げられることが多いため）。
+  - **Lock file maintenance**（週1）：`e2e/browser/package-lock.json` の作り直し（Playwright の間接依存）
+- Go モジュールと npm は公開から3日待ってから PR になる（乗っ取られて公開された版は数日以内に取り下げられることが多いため）。
 - ベースイメージ（`golang`・`distroless`）と Dockerfile の syntax は digest で固定。中身の更新は digest 更新の PR として来る。
 - **Debian のリリース（`static-debian12` → `13`）は Renovate が提案しない**（イメージ名が変わるため）。distroless のサポート状況を見て手で上げる。
 - 対象外：`deploy/cloudflare-worker`（lockfile も CI も無く、wrangler で手でデプロイしている）と `assets/web-vitals.js`（手で同梱している）。上げるときは手で。
@@ -70,6 +71,7 @@ gh api -X PATCH repos/highemerly/next-rum \
    | Go の版 | Go グループ | checks・e2e が緑ならマージ。マイナー（1.26 → 1.27）はリリースノートで net/http の挙動の変更を見る |
    | ベースイメージ | `distroless` の digest | e2e が本番と同じ権限（非 root・読み取り専用のルート）で起動して確かめるので、緑ならマージ |
    | テスト用イメージ | compose.yaml の `python`（偽の Loki） | 本番には入らない。e2e が緑ならマージ |
+   | テストの道具 | `@playwright/test`・e2e.yml の Node（setup-node の `node-version`） | 本番には入らない。e2e が緑ならマージ |
    | リンクされているが使っていないもの | `prometheus/procfs`・`golang.org/x/sys`（プロセスや Go ランタイムのメトリクスは登録していない） | CI 緑ならマージ |
    | タグ時にしか動かない Actions | docker/login-action・docker/metadata-action・peter-evans/create-pull-request | PR の CI では実行されない。マージ後、次のリリースの docker-build.yml で初めて動く |
 4. squash マージする。**CI の構成（ワークフロー・e2e）を変えた PR のあとは、開いている Renovate の PR を Dashboard の「rebase all open PRs」で rebase し、新しい CI を通してからマージする**（ruleset は main への追従を求めていないので、古い CI の結果のままでもマージできてしまう）。
@@ -106,7 +108,7 @@ gh api -X PATCH repos/highemerly/next-rum \
 |---|---|---|
 | [ci.yml](../.github/workflows/ci.yml) | main 以外のブランチへの push | 差分を見て、下の2つのうち必要なものだけ呼ぶ。結果は `ci-result` にまとめる |
 | [checks.yml](../.github/workflows/checks.yml) | ci.yml とタグから呼ばれる | gofmt / go vet / `go test -race` |
-| [e2e.yml](../.github/workflows/e2e.yml) | ci.yml とタグから呼ばれる | 本番イメージを [compose.yaml](../compose.yaml) で起動し、API スモーク（[e2e/smoke.sh](../e2e/smoke.sh)）を回す。ブランチではビルド（push しない）から、タグでは push 済みのイメージで |
+| [e2e.yml](../.github/workflows/e2e.yml) | ci.yml とタグから呼ばれる | 本番イメージを [compose.yaml](../compose.yaml) で起動し、API スモーク（[e2e/smoke.sh](../e2e/smoke.sh)）とブラウザでの確認（[e2e/browser](../e2e/browser)）を回す。ブランチではビルド（push しない）から、タグでは push 済みのイメージで |
 | [docker-build.yml](../.github/workflows/docker-build.yml) | `v*` タグ | checks とイメージのビルド・push を並走させ、push したイメージで e2e を回し、全部緑なら k8sg1-repo へ PR（README「Release / deploy」） |
 
 ジョブの定義は checks.yml・e2e.yml の1か所に置き、ブランチ用とタグ用の両方から呼ぶ。
@@ -146,7 +148,9 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 - Loki は compose 内の偽サーバー（[e2e/fake-loki/server.py](../e2e/fake-loki/server.py)。標準ライブラリだけ）に置き換えている。受けた push を記録するだけで、判定は smoke.sh が行う。本番のコードは変えておらず、`LOKI_URL` を向けているだけ。
 - コレクタは Loki へ5秒ごとにまとめて送る。それを待たずに確かめるため、smoke.sh は最後にコレクタを止める（本番の rollout と同じ SIGTERM。止まる前に溜まったログを送り切る）。rollout でログを落とさないことも、これで見ている。
 - 送るものは beacon.js が実際に送るものと同じ形にしている（`sendBeacon` に text/plain の Blob、`Origin` 付き、読み込み時は配列・離脱時の1件はオブジェクト）。beacon.js の送り方を変えたら smoke.sh も合わせる。
-- ブラウザでの確認（beacon.js が例外なく動くか）はまだ無い。
+- ブラウザでの確認は [e2e/browser](../e2e/browser/tests/beacon.spec.ts)（Playwright・Chromium）。計測対象のサイトに `<script async src=".../beacon.js">` を1行入れたページを作り、beacon.js・rum-config.json・web-vitals.js が 200 で読めること、未捕捉の JS 例外と CSP 違反が無いこと（サイト側の CSP はコレクタのオリジンだけを許す厳しいもの）、読み込み時のビーコンが `/collect` に届くことだけを見る。中身の検証は smoke.sh に任せる。
+  - ページは Playwright が route で返す（サーバーは要らない）。そのページは Chrome の Local Network Access で公開サイト扱いになり、127.0.0.1 のコレクタへの通信を止められるので、テストでは `local-network-access` の許可を与えている（本番は公開サイトから公開の rum.piyo.me を読むので当たらない）。
+  - ブラウザのビーコンも smoke.sh が差で見ているカウンタに数えられるので、smoke.sh の後に、コレクタを起こし直してから回す。
 - 画面操作やリトライは入れない。起動待ちだけは、distroless にシェルが無くコンテナ内の healthcheck が書けないので、外から `/healthz` を curl で待つ。
 
 手元で回す（ポート 18480 が塞がっていれば `E2E_PORT` で変える）：
@@ -155,6 +159,12 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 docker compose up -d --build
 curl -fsS --retry 30 --retry-all-errors --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
 bash e2e/smoke.sh
+
+# ブラウザ（初回だけ npm ci と playwright install）
+docker compose start collector
+curl -fsS --retry 30 --retry-all-errors --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
+(cd e2e/browser && npm ci && npx playwright install --only-shell chromium && npx playwright test)
+
 docker compose down
 ```
 

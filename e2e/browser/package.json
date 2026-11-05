@@ -1,0 +1,11 @@
+{
+  "name": "next-rum-e2e-browser",
+  "private": true,
+  "description": "Browser smoke test for beacon.js (see docs/development.md, E2E)",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
