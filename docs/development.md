@@ -128,7 +128,7 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 | Go のソース・go.mod / go.sum・assets・ci.yml・ci-targets.sh | 回す | 回す |
 | checks.yml | 回す | |
 | Dockerfile・`.dockerignore`・compose.yaml・`e2e/`・e2e.yml | | 回す |
-| ドキュメント・`.claude/`・`.githooks/`・ruleset・Renovate の設定・`.gitignore`・`.tool-versions` | | |
+| ドキュメント・`.claude/`・`.githooks/`・ruleset・Renovate の設定・リリースノートの分類（`.github/release.yml`）・`.gitignore`・`.tool-versions` | | |
 | `deploy/` のその他・`testdata/`（手で反映するもの・手元の動作確認用） | | |
 | docker-build.yml（タグでしか動かず、ブランチでは確かめようがない） | | |
 | 上のどれにも当たらないもの | 回す | 回す |
@@ -187,9 +187,26 @@ smoke.sh は最後にコレクタを止めるので、もう一度流すとき�
 - 前回のタグから変更が無ければ、何もせずに赤で止まる。
 - 手元でタグを打って push しても同じことが起きる（タグは ruleset の対象外）：
   ```bash
-  git switch main && git pull && git tag v0.1.5 && git push origin v0.1.5
+  git switch main && git pull && git tag v0.1.6 && git push origin v0.1.6
   ```
 - tag-release.yml は docker-build.yml を直接呼ぶ。GITHUB_TOKEN で push したタグでは docker-build.yml の `on: push` が起動しないため（二重にも走らない）。
 - 作り直しは、失敗した実行を Actions の画面で Re-run する。
 
-タグで起きること（検査・イメージの push・マニフェストのリポジトリへの PR）は [README の Release / deploy](../README.md#release--deploy) を参照。
+タグで起きること（検査・イメージの push・GitHub Release・マニフェストのリポジトリへの PR）は [README の Release / deploy](../README.md#release--deploy) を参照。
+
+### GitHub Release とリリースノート
+
+全部の検査が緑のときだけ、タグごと（パッチも含む）に GitHub Release を作る。Release がある版＝デプロイしてよい版。
+ノートは GitHub の自動生成（前回のタグからマージされた PR の一覧と Full Changelog・英語）。分類は
+[.github/release.yml](../.github/release.yml) で、Renovate の PR（`dependencies` ラベル）を `Dependencies` に、
+それ以外を `Changes` に分ける。同じノートをデプロイの PR 本文にも使う（ラベル `app-update`・オーナーに assign）。
+
+- **前回のタグを明示している**（`previous_tag_name`）。省くと GitHub は前回の「Release」を起点にするので、
+  Release を作っていない範囲（v0.1.5 まで）があると起点がずれる
+- v0.1.5 までの Release は無い（作り直さない）
+
+### うまくいかないとき
+
+- **デプロイの PR が出ない**: `create-k8s-pr` のログを見る。マニフェストの `image:` の行が書き換わらなかった
+  （マニフェストの書式が変わった）ときは、わざと赤で止めている。検査が赤なら、そもそも `release` と
+  `create-k8s-pr` は動かない

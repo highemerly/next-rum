@@ -61,8 +61,8 @@ jobs:
     uses: ./.github/workflows/docker-build.yml
     with:
       version: ${{ needs.tag.outputs.version }}
-    # 呼ばれる側のジョブが使う権限の和（イメージの push）と、デプロイの PR に使うシークレット
+    # 呼ばれる側のジョブが使う権限の和（GitHub Release の作成・イメージの push）と、デプロイの PR に使うシークレット
     permissions:
-      contents: read
+      contents: write
       packages: write
     secrets: inherit

@@ -1,0 +1,11 @@
+# GitHub Release の自動生成ノート（docker-build.yml の release ジョブがタグごとに作る）の分類。
+# PR は上から最初に合った見出しに入るので、`*` から dependencies を除き、Renovate の PR
+# （renovate.json5 で dependencies ラベルを付ける）を下の見出しにまとめる。
+changelog:
+  categories:
+    - title: Changes
+      labels: ['*']
+      exclude:
+        labels: [dependencies]
+    - title: Dependencies
+      labels: [dependencies]

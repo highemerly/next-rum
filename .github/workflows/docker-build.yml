@@ -20,20 +20,20 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # CI（gofmt / vet / test）。build-and-push と並走し、e2e と合わせて全部緑になって初めて
-  # create-k8s-pr が走る（下の needs 参照）。定義は checks.yml に集約。
+  # ブランチでは差分で間引いた検査を、リリースでは全部回す。定義はブランチの CI と同じ
+  # 再利用ワークフロー（二重に書かない）。checks は build と並走する。
   checks:
     uses: ./.github/workflows/checks.yml
 
-  # push したイメージそのもの（＝デプロイするもの）で API スモークを回す。ブランチでは差分で
-  # 省いていたかもしれないので、タグでは必ず回す。定義は e2e.yml に集約。
+  # push したイメージそのもの（＝デプロイするもの）で E2E を回す。作り直したイメージで通っても、
+  # 本番に出すものの確認にならない。定義は e2e.yml に集約。
   e2e:
-    needs: build-and-push
+    needs: build
     uses: ./.github/workflows/e2e.yml
     with:
-      image: ${{ needs.build-and-push.outputs.image }}
+      image: ${{ needs.build.outputs.image }}
 
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -41,10 +41,16 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+      # release のノートの起点。前回のタグが無ければ空
+      # （DB を持たないので、ほかのリポジトリにある has_migration は出さない）
+      prev_tag: ${{ steps.prev.outputs.prev_tag }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # 前回のタグを取るため履歴ごと取る
+          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -56,13 +62,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # マニフェストに書く値（v なしのセメンティックバージョン）。
-      # 例: refs/tags/v1.2.3 -> 1.2.3
+      # マニフェストに書く値（v なしのセメンティックバージョン）。例: refs/tags/v1.2.3 -> 1.2.3
       - name: Extract version
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
         run: echo "version=${INPUT_VERSION:-${GITHUB_REF#refs/tags/v}}" >> "$GITHUB_OUTPUT"
+
+      - name: Find previous tag
+        id: prev
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
+          echo "Previous tag: ${PREV_TAG:-(none)}"
 
       - name: Extract metadata (tags, labels)
         id: meta
@@ -76,7 +88,9 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=v${{ steps.version.outputs.version }}
             type=raw,value=latest
 
-      # 本番のノードは amd64。ローカル(arm64)ビルドとの取り違えを防ぐため明示的に固定する。
+      # イメージ自体は検査の結果を待たずに push され、latest も動く。本番は版を固定していて
+      # latest をデプロイに使わない。本番のノードは amd64 なので、ローカル(arm64)ビルドとの
+      # 取り違えを防ぐため明示的に固定する。ブランチの E2E も同じ buildcache を読む
       - name: Build and push Docker image
         uses: docker/build-push-action@v7
         with:
@@ -88,9 +102,52 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true,compression=zstd,compression-level=3
 
+  # GitHub Release をタグごと（パッチも含む）に作る。全検査が通ったときだけ＝Release がある版はデプロイしてよい版。
+  # ノートは GitHub の自動生成（前回のタグからマージされた PR の一覧・英語。分類は .github/release.yml）。
+  # 同じノートを create-k8s-pr がデプロイの PR 本文に使う（変更の一覧の出どころを1つにする）。
+  release:
+    needs: [build, checks, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      # generate-notes API も Release の作成も contents: write が要る
+      contents: write
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+
+    steps:
+      # 前回のタグは明示する。省くと GitHub は前回の「Release」を起点にするので、
+      # Release を作っていない範囲（v0.1.5 まで）があると起点がずれる
+      - name: Generate release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          PREV_TAG: ${{ needs.build.outputs.prev_tag }}
+        run: |
+          args=(-f tag_name="v$VERSION" -f target_commitish="$GITHUB_SHA")
+          if [ -n "$PREV_TAG" ]; then args+=(-f previous_tag_name="$PREV_TAG"); fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body > "$RUNNER_TEMP/notes.md"
+          {
+            echo "notes<<NOTES_EOF"
+            cat "$RUNNER_TEMP/notes.md"
+            echo
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # タグ名は GITHUB_REF_NAME ではなく版から作る（tag-release.yml から呼ばれたときは ref が main のため）
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+
   create-k8s-pr:
-    # ビルド・CI・push したイメージでの e2e が全部成功したときだけ k8s マニフェストへ PR する。
-    needs: [build-and-push, checks, e2e]
+    # 検査が全部（ビルド・checks・E2E）通ったときだけ k8s マニフェストへ PR する（release が同じ条件で
+    # 待っているので、それを待てば足りる）。マニフェストのリポジトリは Flux 同期なので、この PR のマージが
+    # そのまま本番へのデプロイになる。
+    needs: [build, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -108,30 +165,45 @@ jobs:
           token: ${{ secrets.K8SG1_PAT }}
           path: k8s-repo
 
+      # マニフェストの書式が変わって sed が何も書き換えないと、差分が無いので create-pull-request は
+      # PR を作らずに黙って成功する（＝デプロイされないのに緑）。書き換わったことを確かめて落とす
       - name: Update image tag
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+        working-directory: k8s-repo
         run: |
-          cd k8s-repo
-          for p in ${{ env.K8S_MANIFEST_PATHS }}; do
-            sed -i "s|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.version }}|" "$p"
+          repo="${IMAGE%:*}"
+          for p in $K8S_MANIFEST_PATHS; do
+            sed -i "s|image: ${repo}:.*|image: ${IMAGE}|" "$p"
+            grep -q "image: ${IMAGE}$" "$p" || { echo "::error file=$p::image line not updated"; exit 1; }
           done
+
+      # 本文は英語・全アプリ共通の書式（イメージ・ビルドのリンク・release ジョブが生成したノート）。
+      # ノートの PR は完全な URL で書かれるので、マニフェストのリポジトリの #N へのリンクに化けない。
+      - name: Write PR body
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+          NOTES: ${{ needs.release.outputs.notes }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "- Image: \`$IMAGE\`"
+            echo "- Build: $RUN_URL"
+            echo
+            printf '%s\n' "$NOTES"
+          } > "$RUNNER_TEMP/pr-body.md"
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
           path: k8s-repo
           token: ${{ secrets.K8SG1_PAT }}
-          branch: update-rum-collector-${{ needs.build-and-push.outputs.version }}
+          branch: update-next-rum-${{ needs.build.outputs.version }}
           delete-branch: true
           # マニフェストのリポジトリには PR が大量に来るので、自分に assign して「Assigned to you」で見落とさないようにする
           assignees: ${{ github.repository_owner }}
-          commit-message: "Update rum-collector to ${{ needs.build-and-push.outputs.version }}"
-          title: "Update rum-collector to ${{ needs.build-and-push.outputs.version }}"
-          body: |
-            ## Changes
-            - Update image: `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.version }}`
-            - Source commit: ${{ github.repository }}@${{ github.sha }}
-
-            ---
-            🤖 Auto-generated by GitHub Actions
-          labels: |
-            rum-collector
+          commit-message: Update next-rum to ${{ needs.build.outputs.version }}
+          title: Update next-rum to ${{ needs.build.outputs.version }}
+          body-path: ${{ runner.temp }}/pr-body.md
+          # app-update: マニフェストのリポジトリに大量に来る PR のうちアプリの版上げを見分ける（全アプリ共通）
+          labels: app-update
