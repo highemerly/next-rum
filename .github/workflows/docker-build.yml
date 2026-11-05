@@ -4,12 +4,16 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
+  # tag-release.yml（Actions の画面から手で実行）がタグを打ってから呼ぶ。GITHUB_TOKEN で push したタグでは
+  # ワークフローが起動しないため、push を待たずに直接呼んでもらう。そのタグは github.sha に付いているので、
+  # checkout（既定で github.sha）・checks・e2e もそのタグと同じコミットを見る。
+  # 失敗した実行の作り直しは、Actions の画面の Re-run で行う（以前の workflow_dispatch はやめた）。
+  workflow_call:
     inputs:
-      tag:
-        description: 'Image tag (e.g., v1.0.0)'
+      version:
+        description: 'Version without "v" (e.g., 1.2.3). The tag vX.Y.Z must already point at github.sha'
+        type: string
         required: true
-        default: 'latest'
 
 env:
   REGISTRY: ghcr.io
@@ -56,23 +60,21 @@ jobs:
       # 例: refs/tags/v1.2.3 -> 1.2.3
       - name: Extract version
         id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-          fi
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: echo "version=${INPUT_VERSION:-${GITHUB_REF#refs/tags/v}}" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # tag-release.yml から呼ばれたときは github.ref が main なので、版は value で渡す
+          flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{version}},value=v${{ steps.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ steps.version.outputs.version }}
+            type=raw,value=latest
 
       # 本番のノードは amd64。ローカル(arm64)ビルドとの取り違えを防ぐため明示的に固定する。
       - name: Build and push Docker image

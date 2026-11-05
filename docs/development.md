@@ -174,12 +174,21 @@ smoke.sh は最後にコレクタを止めるので、もう一度流すとき�
 
 ## リリース
 
-変更は PR で main に入れておき、タグは main の先頭に打つ（タグは ruleset の対象外）：
+変更は PR で main に入れておき、Actions の **Tag a release**（[tag-release.yml](../.github/workflows/tag-release.yml)）を main で手で実行する。
+前回のタグから版を上げて main の先頭にタグを打ち、[docker-build.yml](../.github/workflows/docker-build.yml) を呼ぶ。
 
-```bash
-git switch main && git pull
-git tag v0.1.4
-git push origin v0.1.4
-```
+| 上げ方 | いつ |
+|---|---|
+| patch | 修正と依存の更新だけ |
+| minor | 新しい機能がある（利用者・運用者から見て、できることが増えた） |
+| major | 互換性を崩す（beacon.js の送る形・設定ファイルの形・メトリクスの名前やラベルを変えた） |
+
+- 前回のタグから変更が無ければ、何もせずに赤で止まる。
+- 手元でタグを打って push しても同じことが起きる（タグは ruleset の対象外）：
+  ```bash
+  git switch main && git pull && git tag v0.1.5 && git push origin v0.1.5
+  ```
+- tag-release.yml は docker-build.yml を直接呼ぶ。GITHUB_TOKEN で push したタグでは docker-build.yml の `on: push` が起動しないため（二重にも走らない）。
+- 作り直しは、失敗した実行を Actions の画面で Re-run する。
 
 タグで起きること（検査・イメージの push・マニフェストのリポジトリへの PR）は [README の Release / deploy](../README.md#release--deploy) を参照。

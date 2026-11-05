@@ -166,11 +166,15 @@ One line, identical on every service:
 
 Tag-driven, same flow as the other services (movapic-neo / nmd). Changes reach
 `main` only through squash-merged PRs (branch rules and setup:
-[docs/development.md](docs/development.md)); the tag goes on `main`:
+[docs/development.md](docs/development.md)). To release, run **Tag a release**
+(`.github/workflows/tag-release.yml`) from the Actions tab on `main` and pick
+the bump: `patch` for fixes and dependency updates only, `minor` for new
+features, `major` for breaking changes. It tags the head of `main` and runs the
+release below. Pushing a tag by hand does the same:
 
 ```bash
 git switch main && git pull
-git tag v0.1.0 && git push origin v0.1.0
+git tag v0.1.5 && git push origin v0.1.5
 ```
 
 `.github/workflows/docker-build.yml` runs `checks` (gofmt/vet/test) and

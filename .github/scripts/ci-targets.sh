@@ -20,8 +20,8 @@ while IFS= read -r file; do
     # 手で反映している設定とマニフェスト（Grafana・vmalert・Traefik・Cloudflare）と、
     # 手元の動作確認用（README「Local end-to-end」）。どれもイメージにもテストにも入らない
     deploy/* | testdata/*) ;;
-    # タグ push でしか動かない（ブランチでは確かめようがない）
-    .github/workflows/docker-build.yml) ;;
+    # タグ push・手での実行でしか動かない（ブランチでは確かめようがない）
+    .github/workflows/docker-build.yml | .github/workflows/tag-release.yml) ;;
     # ワークフロー単体の変更（Actions の更新など）は、それを使うジョブだけ
     .github/workflows/checks.yml) checks=true ;;
     # 本番イメージの中身と、それを起動して確かめるスモーク（compose・スクリプト）
