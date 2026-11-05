@@ -118,6 +118,8 @@ jobs:
           token: ${{ secrets.K8SG1_PAT }}
           branch: update-rum-collector-${{ needs.build-and-push.outputs.version }}
           delete-branch: true
+          # マニフェストのリポジトリには PR が大量に来るので、自分に assign して「Assigned to you」で見落とさないようにする
+          assignees: ${{ github.repository_owner }}
           commit-message: "Update rum-collector to ${{ needs.build-and-push.outputs.version }}"
           title: "Update rum-collector to ${{ needs.build-and-push.outputs.version }}"
           body: |

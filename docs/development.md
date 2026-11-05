@@ -4,6 +4,7 @@
 
 - **main へは直接コミット・push しない**。変更は必ずブランチを切り、PR → CI 緑 → squash マージで取り込む（依存更新を Renovate の PR で回すため、人の変更も同じ経路に揃える）。
 - PR のタイトルは英語で、中身が分かるように付ける。squash のコミットメッセージにそのまま使われる。
+- PR は自分に assign する（`gh pr create --assignee @me`）。Renovate の PR とマニフェストのリポジトリへのデプロイ PR も自動で assign される。どのリポジトリの PR も github.com/pulls の「Assigned to you」にまとまるので、見落とさない。
 - 手元：[.githooks/pre-commit](../.githooks/pre-commit) が main 上のコミットを拒否する。clone ごとに1回有効化する：
   ```bash
   git config core.hooksPath .githooks
@@ -48,7 +49,7 @@ gh api -X PATCH repos/highemerly/next-rum \
 
 依存は Renovate（GitHub App）が出す PR で上げる。設定は [.github/renovate.json5](../.github/renovate.json5)（各ルールの理由はコメント参照）。
 
-- **毎週月曜・木曜の 9時前（JST）** にまとめて PR が来る（Go の間接依存の一括更新は月曜のみ）。自動マージはしない。
+- **毎週月曜・木曜の 9時前（JST）** にまとめて PR が来る（Go の間接依存の一括更新は月曜のみ）。自動マージはしない。PR は自分に assign される。
 - **メジャー更新**は PR が自動では来ず、Issue「Dependency Dashboard」の Pending Approval に並ぶ（コード側の対応が要るため）。
 - 1つの PR にまとまるもの：
   - **Go**：go.mod の `go` ディレクティブ・Dockerfile の `golang:X.Y.Z`・`.tool-versions`（CI の setup-go は go.mod を読むので、揃えないと CI とイメージで版がずれる）
