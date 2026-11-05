@@ -8,6 +8,9 @@
   // 週2回にまとめる（毎日 PR が来ると確認が追いつかず、週1だと間隔が空きすぎる）。
   schedule: ['before 9am on monday and thursday'],
   labels: ['dependencies'],
+  // PR が多くのリポジトリに来て見落とすので、自分に assign して github.com/pulls の「Assigned to you」にまとめる。
+  // （自動マージにする PR は既定で assign されず、自動マージに失敗したときだけ assign される）
+  assignees: ['highemerly'],
   // Go モジュールの更新後に go mod tidy を回し、go.sum と require の直接/間接を正しく保つ。
   postUpdateOptions: ['gomodTidy'],
   // メジャーはコード側の対応が要るので、着手するときに Dependency Dashboard で承認して PR を作らせる
