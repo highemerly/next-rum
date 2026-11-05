@@ -15,11 +15,9 @@ e2e=false
 base="$(git merge-base origin/main HEAD)"
 while IFS= read -r file; do
   case "$file" in
-    # config_sync_test が assets/rum-config.json との一致を見ている
-    deploy/k8s/configmap.yaml) checks=true ;;
     # 動作に影響しないもの（ドキュメント・Claude Code の設定・ローカル hook・GitHub の設定・手元用の設定）
     *.md | docs/* | .claude/* | .githooks/* | .github/rulesets/* | .github/renovate.json5 | .gitignore | .tool-versions) ;;
-    # 手で反映している設定とマニフェスト（Grafana・vmalert・Traefik・Cloudflare・k8sg1-repo へのコピー元）と、
+    # 手で反映している設定とマニフェスト（Grafana・vmalert・Traefik・Cloudflare）と、
     # 手元の動作確認用（README「Local end-to-end」）。どれもイメージにもテストにも入らない
     deploy/* | testdata/*) ;;
     # タグ push でしか動かない（ブランチでは確かめようがない）

@@ -4,9 +4,12 @@
 
 - **main へは直接コミット・push しない**。変更は必ずブランチを切り、PR → CI 緑 → squash マージで取り込む（依存更新を Renovate の PR で回すため、人の変更も同じ経路に揃える）。
 - PR のタイトルは英語で、中身が分かるように付ける。squash のコミットメッセージにそのまま使われる。
-- 手元：[.githooks/pre-commit](../.githooks/pre-commit) が main 上のコミットを拒否する。clone ごとに1回有効化する：
+- 手元：[.githooks/pre-commit](../.githooks/pre-commit) が main 上のコミットを拒否する。clone ごとに1回有効化する。
+  あわせてコミットの作者のメールを GitHub の noreply にする（公開リポジトリなので、ブランチのコミットの作者は PR の画面で誰でも見られる。
+  squash のコミットは GitHub の設定のメールになるが、ブランチのコミットは手元の設定のまま残る）：
   ```bash
   git config core.hooksPath .githooks
+  git config user.email 3039555+highemerly@users.noreply.github.com
   ```
 - サーバー側：GitHub の ruleset（定義は [.github/rulesets/main.json](../.github/rulesets/main.json)）が main への push を拒否する。タグは ruleset の対象外なので、リリースのタグは手元から push できる。
 
@@ -109,7 +112,7 @@ gh api -X PATCH repos/highemerly/next-rum \
 | [ci.yml](../.github/workflows/ci.yml) | main 以外のブランチへの push | 差分を見て、下の2つのうち必要なものだけ呼ぶ。結果は `ci-result` にまとめる |
 | [checks.yml](../.github/workflows/checks.yml) | ci.yml とタグから呼ばれる | gofmt / go vet / `go test -race` |
 | [e2e.yml](../.github/workflows/e2e.yml) | ci.yml とタグから呼ばれる | 本番イメージを [compose.yaml](../compose.yaml) で起動し、API スモーク（[e2e/smoke.sh](../e2e/smoke.sh)）とブラウザでの確認（[e2e/browser](../e2e/browser)）を回す。ブランチではビルド（push しない）から、タグでは push 済みのイメージで |
-| [docker-build.yml](../.github/workflows/docker-build.yml) | `v*` タグ | checks とイメージのビルド・push を並走させ、push したイメージで e2e を回し、全部緑なら k8sg1-repo へ PR（README「Release / deploy」） |
+| [docker-build.yml](../.github/workflows/docker-build.yml) | `v*` タグ | checks とイメージのビルド・push を並走させ、push したイメージで e2e を回し、全部緑ならマニフェストのリポジトリへ PR（README「Release / deploy」） |
 
 ジョブの定義は checks.yml・e2e.yml の1か所に置き、ブランチ用とタグ用の両方から呼ぶ。
 
@@ -122,7 +125,6 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 | 変更したファイル | checks | e2e |
 |---|---|---|
 | Go のソース・go.mod / go.sum・assets・ci.yml・ci-targets.sh | 回す | 回す |
-| `deploy/k8s/configmap.yaml`（config_sync_test が見ている） | 回す | |
 | checks.yml | 回す | |
 | Dockerfile・`.dockerignore`・compose.yaml・`e2e/`・e2e.yml | | 回す |
 | ドキュメント・`.claude/`・`.githooks/`・ruleset・Renovate の設定・`.gitignore`・`.tool-versions` | | |
@@ -132,7 +134,7 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 
 新しい種類のファイルを足したら、この表とスクリプトを見直す。一覧に無いものは全部回るので、漏れても検査が抜けることはない（遅くなるだけ）。
 
-タグ（リリース）ではブランチで省いた検査も全部回り、全部緑のときだけ k8sg1-repo へ PR が出る。
+タグ（リリース）ではブランチで省いた検査も全部回り、全部緑のときだけマニフェストのリポジトリへ PR が出る。
 
 ### 必須チェックは `ci-result` の1つだけ
 
@@ -142,7 +144,7 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 
 ### E2E スモーク
 
-本番イメージを [compose.yaml](../compose.yaml) で、本番（deploy/k8s/deployment.yaml）と同じ環境変数・設定ファイル（`assets/rum-config.json`＝ConfigMap と同じ中身）・権限（非 root・読み取り専用のルート・capabilities なし）で起動し、[e2e/smoke.sh](../e2e/smoke.sh) が curl で叩く。
+本番イメージを [compose.yaml](../compose.yaml) で、本番のマニフェストと同じ環境変数・設定ファイル（`assets/rum-config.json`＝本番の ConfigMap と同じ中身）・権限（非 root・読み取り専用のルート・capabilities なし）で起動し、[e2e/smoke.sh](../e2e/smoke.sh) が curl で叩く。
 
 - 見ているもの：`/healthz`、配信物（beacon.js・web-vitals.js・rum-config.json の中身・Content-Type・CORS・Cache-Control）、`/collect` の CORS、`/collect` に送ったイベントが `/metrics` のテキスト出力に出ること（主な系列の名前・ラベル・値）と、Loki へ push されること（ストリームのラベル・タイムスタンプ・本文の JSON）。
 - Loki は compose 内の偽サーバー（[e2e/fake-loki/server.py](../e2e/fake-loki/server.py)。標準ライブラリだけ）に置き換えている。受けた push を記録するだけで、判定は smoke.sh が行う。本番のコードは変えておらず、`LOKI_URL` を向けているだけ。
@@ -180,4 +182,4 @@ git tag v0.1.4
 git push origin v0.1.4
 ```
 
-タグで起きること（検査・イメージの push・k8sg1-repo への PR）は [README の Release / deploy](../README.md#release--deploy) を参照。
+タグで起きること（検査・イメージの push・マニフェストのリポジトリへの PR）は [README の Release / deploy](../README.md#release--deploy) を参照。

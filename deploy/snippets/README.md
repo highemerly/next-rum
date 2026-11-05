@@ -60,7 +60,7 @@ A site can serve the collector under its own host instead of `rum.piyo.me`:
 ```
 
 The site's Ingress routes `/_n-rum/{beacon.js,web-vitals.js,rum-config.json,collect}`
-to the collector and strips `/_n-rum` (see `manifests/hosteka/prd/ingressroute.yaml`
-in k8sg1-repo). `beacon.js` resolves the other three URLs against its own
+to the collector and strips `/_n-rum` (hosteka does this in its IngressRoute).
+`beacon.js` resolves the other three URLs against its own
 directory, so no attribute is needed. Match the four paths exactly rather than
 `PathPrefix`, or `/_n-rum/metrics` becomes public.

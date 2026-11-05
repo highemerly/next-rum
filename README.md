@@ -71,7 +71,6 @@ internal/
   server/                routes, CORS, embedded-asset serving
 embed.go                 //go:embed of assets into the binary
 deploy/
-  k8s/                   manifests for k8sg1-repo manifests/rum/prd/ (+ setup runbook)
   traefik/               rewriteBody injection middleware (Mastodon/handon.club)
   cloudflare-worker/     HTMLRewriter injection (Misskey/mi.hiyoko.club)
   cloudflare/            Transform Rules for Server-Timing (cache visibility)
@@ -93,11 +92,12 @@ deploy/
 
 ## Develop
 
-Once per clone, enable the hook that refuses commits on `main`
-(see [docs/development.md](docs/development.md)):
+Once per clone, enable the hook that refuses commits on `main` and commit with
+the GitHub noreply address (see [docs/development.md](docs/development.md)):
 
 ```bash
 git config core.hooksPath .githooks
+git config user.email 3039555+highemerly@users.noreply.github.com
 ```
 
 ```bash
@@ -175,16 +175,37 @@ git tag v0.1.0 && git push origin v0.1.0
 
 `.github/workflows/docker-build.yml` runs `checks` (gofmt/vet/test) and
 `build-and-push` (ghcr.io, `linux/amd64`) in parallel, then an API smoke test
-(`e2e/smoke.sh`) against the pushed image; when all are green it opens a PR against `highemerly/k8sg1-repo` bumping the `image:` line in
-`manifests/rum/prd/deployment.yaml`. Merging that PR lets Flux roll it out.
+(`e2e/smoke.sh`) against the pushed image; when all are green it opens a PR
+against the manifest repository bumping the `image:` line. Merging that PR lets
+Flux roll it out.
+
+The Kubernetes manifests (Deployment, ConfigMap, IngressRoute, VMServiceScrape)
+and the cluster-side runbook (first-time setup, rollout checks, rollback) live
+in that repository, which is private. This repository is public and so are its
+Actions logs, so the workflow reads the repository name and paths from secrets:
+
+| Secret | Value |
+|---|---|
+| `K8SG1_REPO` | the manifest repository (`owner/name`) |
+| `K8SG1_MANIFEST_PATHS` | the prd manifests whose `image:` line to bump (space-separated) |
+| `K8SG1_PAT` | a token that can open PRs there (Contents and Pull requests: read and write) |
+
+Production mounts `rum-config.json` from that ConfigMap, so an image bump does
+not change it. When you edit `assets/rum-config.json`, mirror it to the
+ConfigMap by hand; no test here can see that copy.
+
+After a rollout, check it from the edge:
+
+```bash
+curl -s https://rum.piyo.me/healthz
+curl -sI https://rum.piyo.me/beacon.js | grep -i 'access-control\|cache-control'
+curl -s https://rum.piyo.me/rum-config.json | head
+```
 
 Branch pushes (not `main`) run `ci.yml`: the same `checks.yml` plus the smoke
 test on an image built without push, each only when the diff can affect it. See
 [docs/development.md](docs/development.md#ci) (also how to run the smoke test
 locally with `docker compose`).
-
-First-time cluster setup (namespace, cert, Flux Kustomization, DNS, `K8SG1_PAT`)
-and the post-rollout verification runbook: **[deploy/k8s/README.md](deploy/k8s/README.md)**.
 
 Local image build (arm64 Mac → amd64 node needs the platform flag):
 
