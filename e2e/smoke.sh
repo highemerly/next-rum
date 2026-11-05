@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # 本番イメージに対する API スモーク。compose.yaml で起動したコレクタに、本物のクライアント（assets/beacon.js）が
-# 送るのと同じリクエストを送り、配信物・CORS・/metrics のテキスト出力（VictoriaMetrics が scrape するもの）を見る。
-# unit テストはレジストリの値（Gather）までしか見ていないので、client_golang / prometheus/common の更新で
-# 出力が変わったときはここで気づく。
+# 送るのと同じリクエストを送り、配信物・CORS・/metrics のテキスト出力（VictoriaMetrics が scrape するもの）と、
+# Loki への push（偽の Loki が受けたもの）を見る。unit テストはレジストリの値（Gather）までしか見ておらず、
+# Loki への送り出しはどこもテストしていないので、client_golang / prometheus/common の更新や送り出しの変更はここで気づく。
 #
 # 使い方: bash e2e/smoke.sh（手順は compose.yaml の先頭。手元でポートが塞がっていれば E2E_PORT で変える）
-# カウンタは実行前後の差で見るので、同じコンテナに続けて何度流してもよい。
+# 最後に collector を止める（止めるときに溜まったログを Loki へ送り切るので、それを待たずに確かめられる）。
+# もう一度流すときは docker compose up -d から。カウンタは前後の差、Loki はこの実行の path で見る。
 set -euo pipefail
 
 BASE_URL="http://127.0.0.1:${E2E_PORT:-18480}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+compose() { docker compose -f "$ROOT/compose.yaml" "$@"; }
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -98,7 +100,9 @@ before=()
 for s in "${series[@]}"; do before+=("$(metric "$s")"); done
 
 ts=$(($(date +%s) * 1000))
-common="\"service\":\"$SERVICE\",\"path_group\":\"$PATH_GROUP\",\"path\":\"/events/e2e-smoke\",\"device\":\"desktop\",\"os\":\"macos\",\"browser\":\"chrome\",\"conn\":\"4g\",\"ts\":$ts"
+# Loki で、この実行で送ったものを見分けるための path（/events/* なので path_group は event のまま）
+PAGE_PATH="/events/e2e-smoke-$ts"
+common="\"service\":\"$SERVICE\",\"path_group\":\"$PATH_GROUP\",\"path\":\"$PAGE_PATH\",\"device\":\"desktop\",\"os\":\"macos\",\"browser\":\"chrome\",\"conn\":\"4g\",\"ts\":$ts"
 load_batch="[
   {$common,\"kind\":\"navigation\",\"dns_ms\":0,\"tcp_ms\":12,\"tls_ms\":8,\"request_ms\":95,\"response_ms\":30,\"transfer_size\":15360,\"encoded_size\":15060,\"decoded_size\":61440,\"protocol\":\"h2\",\"nav_type\":\"navigate\",\"cf_cache\":\"HIT\",\"cf_colo\":\"NRT\"},
   {$common,\"kind\":\"web_vitals\",\"name\":\"TTFB\",\"value\":120.5,\"rating\":\"good\",\"metric_id\":\"v4-e2e-ttfb\",\"nav_type\":\"navigate\"},
@@ -128,6 +132,34 @@ for i in "${!series[@]}"; do
   delta=$(awk -v a="$after" -v b="${before[$i]}" 'BEGIN { print a - b }')
   check "${series[$i]} +${want_delta[$i]}" "${want_delta[$i]}" "$delta"
 done
+
+# ---- Loki への push ----
+# 本番の rollout と同じく SIGTERM で止める。コレクタは止まる前に溜まったログを送り切る（loki.Client.Close）。
+compose stop collector >/dev/null 2>&1
+compose exec -T loki wget -qO- http://127.0.0.1:3100/pushes > "$TMP/pushes.json"
+
+check "Loki push Content-Type" "application/json" "$(jq -r '[.[].content_type] | unique | join(",")' "$TMP/pushes.json")"
+# 受けた push を「ストリームのラベル・タイムスタンプ・本文（JSON）」の並びにし、この実行の path のものだけ残す
+jq --arg p "$PAGE_PATH" '[.[].body.streams[] | .stream as $s | .values[]
+  | {stream: $s, ts: .[0], line: (.[1] | fromjson)} | select(.line.path == $p)]' "$TMP/pushes.json" > "$TMP/lines.json"
+
+nav_stream='{"job":"rum-collector","kind":"navigation","service":"'"$SERVICE"'"}'
+wv_stream='{"job":"rum-collector","kind":"web_vitals","service":"'"$SERVICE"'"}'
+check "Loki navigation lines" 1 "$(jq "[.[] | select(.line.kind == \"navigation\")] | length" "$TMP/lines.json")"
+check "Loki web_vitals lines" 3 "$(jq "[.[] | select(.line.kind == \"web_vitals\")] | length" "$TMP/lines.json")"
+check "Loki navigation stream labels" "$nav_stream" "$(jq -cS '[.[] | select(.line.kind == "navigation") | .stream] | unique | .[]' "$TMP/lines.json")"
+check "Loki web_vitals stream labels" "$wv_stream" "$(jq -cS '[.[] | select(.line.kind == "web_vitals") | .stream] | unique | .[]' "$TMP/lines.json")"
+check "Loki web_vitals metrics" "FCP,LCP,TTFB" "$(jq -r '[.[] | select(.line.kind == "web_vitals") | .line.metric] | sort | join(",")' "$TMP/lines.json")"
+# タイムスタンプはビーコンの ts（ミリ秒）から。Loki のは文字列のナノ秒、本文の ts は RFC3339
+check "Loki timestamps (ns)" "${ts}000000" "$(jq -r '[.[].ts] | unique | join(",")' "$TMP/lines.json")"
+check "Loki line ts" "$(jq -nr --argjson t "$ts" '$t / 1000 | todate')" "$(jq -r '[.[].line.ts] | unique | join(",")' "$TMP/lines.json")"
+# 本文には、ラベルに出さない詳細（path・geo・Cloudflare の colo など）が入る。サニタイズ後の値で出ること
+check "Loki navigation line" \
+  '{"asn":"2516","browser":"chrome","cf_cache":"HIT","cf_colo":"NRT","conn":"4g","country":"JP","decoded_size":61440,"device":"desktop","dns_ms":0,"encoded_size":15060,"os":"macos","path_group":"event","protocol":"h2","request_ms":95,"response_ms":30,"tcp_ms":12,"tls_ms":8,"transfer_size":15360}' \
+  "$(jq -cS '.[] | select(.line.kind == "navigation") | .line | del(.kind, .service, .path, .ts)' "$TMP/lines.json")"
+check "Loki LCP line" \
+  '{"browser":"chrome","conn":"4g","device":"desktop","metric":"LCP","metric_id":"v4-e2e-lcp","nav_type":"navigate","os":"macos","path_group":"event","rating":"good","value":1800}' \
+  "$(jq -cS '.[] | select(.line.metric == "LCP") | .line | del(.kind, .service, .path, .ts)' "$TMP/lines.json")"
 
 echo
 if [ "$failures" -gt 0 ]; then
