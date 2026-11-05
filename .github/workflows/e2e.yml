@@ -49,7 +49,7 @@ jobs:
       - name: Start collector
         run: |
           docker compose up -d --no-build
-          curl -fsS --retry 30 --retry-connrefused --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
+          curl -fsS --retry 30 --retry-all-errors --retry-delay 1 -o /dev/null http://127.0.0.1:18480/healthz
 
       - name: Run API smoke
         run: bash e2e/smoke.sh
