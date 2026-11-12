@@ -36,13 +36,27 @@ Buffering the tail until hide minimizes requests; a metric that never reaches th
 server (e.g. the tab crashes before hide) is acceptable loss for RUM. The
 collector accepts a single event object or an array.
 
+### SPA route changes
+
+In client-side-routed apps (Misskey, Mastodon's `/web`, Next.js) the loader also
+watches `history.pushState` / `replaceState` / `popstate`. Each change of
+`location.pathname` sends a `soft_navigation` event with the new `path` /
+`path_group` (query- or hash-only changes are ignored, and a pushState followed
+at once by a replaceState counts once). The collector counts it as a page view,
+`rum_pageview_total{nav_type="soft"}`, and writes it to Loki; it has no timings,
+so it does not touch the Navigation Timing histograms or the cache / country /
+ASN counters. Web Vitals stay attributed to the document that was actually
+loaded — splitting LCP/INP/CLS per route needs the Soft Navigations API, which is
+not available across browsers.
+
 ### OS / browser
 
 `os` (`windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`) and `browser`
 (`chrome`/`firefox`/`safari`/`edge`/`opera`/…) are kept **off the latency
 histograms** to protect their cardinality. They land in Loki and in a dedicated
 counter `rum_pageview_total{service,path_group,device,os,browser,nav_type}`
-(one increment per page load) for distribution panels.
+(one increment per page load, plus one per SPA route change with
+`nav_type="soft"`) for distribution panels.
 
 ### Country / ASN (Cloudflare edge geo)
 

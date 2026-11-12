@@ -18,7 +18,7 @@ import (
 
 const maxBodyBytes = 64 << 10 // 64 KiB; a batched beacon holds a handful of events
 
-// event is the union of fields beacon.js may send for either kind.
+// event is the union of fields beacon.js may send for any kind.
 type event struct {
 	Kind      string `json:"kind"`
 	Service   string `json:"service"`
@@ -213,6 +213,21 @@ func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 			"country": country, "asn": asn,
 		})
 
+	case "soft_navigation":
+		// A client-side route change in a SPA (history.pushState / popstate):
+		// no document load happened, so there is no Navigation Timing or cache
+		// status to record — only the screen view. Counted as a pageview with
+		// nav_type="soft" (set here, not taken from the client) so panels can
+		// tell route changes from document loads. country/asn stay per document
+		// load, so they are not incremented again for each route change.
+		h.mx.IncPageview(service, pathGroup, device, os, browser, navTypeSoft)
+		h.pushLoki(service, "soft_navigation", ev.TS, map[string]any{
+			"service": service, "kind": "soft_navigation",
+			"path_group": pathGroup, "path": ev.Path, "nav_type": navTypeSoft,
+			"device": device, "os": os, "browser": browser, "conn": ev.Conn,
+			"country": country, "asn": asn,
+		})
+
 	default:
 		recorded = false
 	}
@@ -238,7 +253,7 @@ func (h *Handler) pushLoki(service, kind string, tsMs int64, fields map[string]a
 
 func eventKind(k string) string {
 	switch k {
-	case "web_vitals", "navigation":
+	case "web_vitals", "navigation", "soft_navigation":
 		return k
 	default:
 		return "unknown"
@@ -263,6 +278,11 @@ var navTypeSet = map[string]struct{}{
 }
 
 func sanitizeNavType(v string) string { return inSet(v, navTypeSet, "unknown") }
+
+// navTypeSoft labels a soft_navigation pageview. It is deliberately not in
+// navTypeSet: only the soft_navigation kind may produce it, so a web_vitals or
+// navigation event claiming nav_type "soft" still clamps to "unknown".
+const navTypeSoft = "soft"
 
 var ratingSet = map[string]struct{}{
 	"good": {}, "needs-improvement": {}, "poor": {},

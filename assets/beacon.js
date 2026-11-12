@@ -159,10 +159,11 @@
     // (Next.js, Misskey, Mastodon's /web) the visitor may have soft-navigated
     // several times by then; reading location.pathname at that point would pair a
     // later path with the path_group resolved at load, so one Loki line would name
-    // two different pages. beacon.js cannot observe soft navigations at all — they
-    // add no Navigation Timing entry and fire no pagehide — so attributing every
-    // metric to the document that was actually loaded is the only self-consistent
-    // reading available to it.
+    // two different pages. Route changes are reported on their own as
+    // soft_navigation events (below), but Web Vitals stay attributed to the
+    // document that was actually loaded: LCP/INP/CLS are defined per document,
+    // and splitting them per route needs the Soft Navigations API, which is not
+    // available across browsers.
     var path       = location.pathname;
     var navInfo    = getNavTimings();
     var cfInfo     = getCFInfo();
@@ -223,10 +224,54 @@
     for (var c in cfInfo) navEvent[c] = cfInfo[c];
     queue.push(navEvent);
 
-    setTimeout(flush, WINDOW_MS); // 1) load batch
+    var loadFlushed = false;
+    setTimeout(function () { loadFlushed = true; flush(); }, WINDOW_MS); // 1) load batch
     addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') flush(); // 2) tail batch
     });
     addEventListener('pagehide', flush);
+
+    // ---- SPA route changes (soft navigations) ----
+    // A client-side router changes the URL with history.pushState/replaceState
+    // (and the back button fires popstate) without loading a document, so none of
+    // the above sees it. Each change of pathname is reported as a soft_navigation
+    // event — a page view with the new path/path_group and no timings. Query- or
+    // hash-only changes and same-path replaceState are not page views and are
+    // ignored. The check is deferred to a task so it runs outside the router's
+    // call stack, and so a pushState immediately followed by a replaceState (a
+    // client-side redirect) counts once, for where the visitor landed.
+    var lastPath = path;
+    var routeCheckPending = false;
+    function checkRoute() {
+      routeCheckPending = false;
+      var p = location.pathname;
+      if (p === lastPath) return;
+      lastPath = p;
+      var ev = base();
+      ev.kind = 'soft_navigation';
+      ev.path = p;
+      ev.path_group = resolvePathGroup(cfg, service);
+      ev.nav_type = 'soft';
+      queue.push(ev);
+      // Before the load window closes, ride along with the load batch; after it,
+      // send now rather than holding the event until the page is hidden, which
+      // in a long-lived SPA tab can be hours later.
+      if (loadFlushed) flush();
+    }
+    function onRouteChange() {
+      if (routeCheckPending) return;
+      routeCheckPending = true;
+      setTimeout(checkRoute, 0);
+    }
+    ['pushState', 'replaceState'].forEach(function (fn) {
+      var orig = history[fn];
+      if (typeof orig !== 'function') return;
+      history[fn] = function () {
+        var ret = orig.apply(this, arguments);
+        onRouteChange();
+        return ret;
+      };
+    });
+    addEventListener('popstate', onRouteChange);
   }).catch(function () { /* measurement failure is silent: never affect the page */ });
 })();
