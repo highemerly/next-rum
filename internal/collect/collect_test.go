@@ -191,3 +191,42 @@ func TestCollectRejectsGET(t *testing.T) {
 		t.Errorf("GET status = %d, want 405", rr.Code)
 	}
 }
+
+func TestCollectSoftNavigation(t *testing.T) {
+	h, mx := newTestHandler(t)
+	req := httptest.NewRequest(http.MethodPost, "/collect",
+		strings.NewReader(`{"kind":"soft_navigation","service":"handon","path_group":"web_ui","path":"/web/home","device":"desktop","os":"macos","browser":"chrome","nav_type":"soft"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("CF-IPCountry", "JP")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rr.Code)
+	}
+	if v := counterValue(t, mx, "rum_collector_received_total", map[string]string{"kind": "soft_navigation", "status": "ok"}); v != 1 {
+		t.Errorf("soft_navigation ok = %v, want 1", v)
+	}
+	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"service": "handon", "path_group": "web_ui", "nav_type": "soft", "os": "macos", "browser": "chrome"}); v != 1 {
+		t.Errorf("pageview soft = %v, want 1", v)
+	}
+	// A route change is not a document load: no Navigation Timing, cache status
+	// or geo counts.
+	for _, name := range []string{"rum_cf_cache_total", "rum_country_total", "rum_asn_total"} {
+		if v := counterValue(t, mx, name, nil); v != 0 {
+			t.Errorf("%s = %v, want 0", name, v)
+		}
+	}
+}
+
+func TestCollectSoftNavTypeOnlyFromSoftNavigation(t *testing.T) {
+	h, mx := newTestHandler(t)
+	// nav_type "soft" is produced server-side for soft_navigation only; a
+	// navigation event claiming it clamps to "unknown".
+	post(t, h, `{"kind":"navigation","service":"handon","path_group":"web_ui","device":"desktop","nav_type":"soft"}`)
+	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"nav_type": "unknown"}); v != 1 {
+		t.Errorf("pageview unknown = %v, want 1", v)
+	}
+	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"nav_type": "soft"}); v != 0 {
+		t.Errorf("pageview soft = %v, want 0", v)
+	}
+}

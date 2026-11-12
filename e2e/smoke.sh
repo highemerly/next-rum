@@ -77,14 +77,16 @@ check "OPTIONS /collect ACAO (other origin)" "" "$(header "$TMP/pre-x.h" Access-
 # ---- /collect → /metrics ----
 # beacon.js と同じ形で送る: navigator.sendBeacon に type text/plain の Blob を渡す（プリフライトを避けるため）。
 # 1回目は読み込み時のまとめ送り（navigation と、その時点で確定した TTFB・FCP の配列）、
-# 2回目はページを離れるときの送り（1件だけなら配列でなくオブジェクト）。
+# 2回目はページを離れるときの送り（1件だけなら配列でなくオブジェクト）。3回目は SPA の画面遷移（soft_navigation）。
 # CF-IPCountry と HAN-CF-ASN は本番では Cloudflare が付ける。
 
 wv_labels="device=\"desktop\",nav_type=\"navigate\",path_group=\"$PATH_GROUP\",rating=\"good\",service=\"$SERVICE\""
 series=(
   "rum_collector_received_total{kind=\"navigation\",status=\"ok\"}"
   "rum_collector_received_total{kind=\"web_vitals\",status=\"ok\"}"
+  "rum_collector_received_total{kind=\"soft_navigation\",status=\"ok\"}"
   "rum_pageview_total{browser=\"chrome\",device=\"desktop\",nav_type=\"navigate\",os=\"macos\",path_group=\"$PATH_GROUP\",service=\"$SERVICE\"}"
+  "rum_pageview_total{browser=\"chrome\",device=\"desktop\",nav_type=\"soft\",os=\"macos\",path_group=\"$PATH_GROUP\",service=\"$SERVICE\"}"
   "rum_country_total{country=\"JP\",service=\"$SERVICE\"}"
   "rum_asn_total{asn=\"2516\",service=\"$SERVICE\"}"
   "rum_cf_cache_total{device=\"desktop\",path_group=\"$PATH_GROUP\",protocol=\"h2\",service=\"$SERVICE\",status=\"HIT\"}"
@@ -94,7 +96,8 @@ series=(
   "web_vitals_lcp_milliseconds_count{$wv_labels}"
   "web_vitals_lcp_milliseconds_bucket{$wv_labels,le=\"2000\"}"
 )
-want_delta=(1 3 1 1 1 1 1 1 1 1 1)
+# country / asn は文書の読み込みごと（navigation）だけで、soft_navigation では増えない
+want_delta=(1 3 1 1 1 1 1 1 1 1 1 1 1)
 
 before=()
 for s in "${series[@]}"; do before+=("$(metric "$s")"); done
@@ -109,8 +112,9 @@ load_batch="[
   {$common,\"kind\":\"web_vitals\",\"name\":\"FCP\",\"value\":800,\"rating\":\"good\",\"metric_id\":\"v4-e2e-fcp\",\"nav_type\":\"navigate\"}
 ]"
 tail_one="{$common,\"kind\":\"web_vitals\",\"name\":\"LCP\",\"value\":1800,\"rating\":\"good\",\"metric_id\":\"v4-e2e-lcp\",\"nav_type\":\"navigate\"}"
+soft_nav="{$common,\"kind\":\"soft_navigation\",\"nav_type\":\"soft\"}"
 
-for body in "$load_batch" "$tail_one"; do
+for body in "$load_batch" "$tail_one" "$soft_nav"; do
   code=$(curl -sS -o /dev/null -D "$TMP/collect.h" -w '%{http_code}' -X POST \
     -H "Origin: $ORIGIN" -H 'Content-Type: text/plain;charset=UTF-8' \
     -H 'CF-IPCountry: JP' -H 'HAN-CF-ASN: 2516' \
@@ -145,9 +149,12 @@ jq --arg p "$PAGE_PATH" '[.[].body.streams[] | .stream as $s | .values[]
 
 nav_stream='{"job":"rum-collector","kind":"navigation","service":"'"$SERVICE"'"}'
 wv_stream='{"job":"rum-collector","kind":"web_vitals","service":"'"$SERVICE"'"}'
+soft_stream='{"job":"rum-collector","kind":"soft_navigation","service":"'"$SERVICE"'"}'
 check "Loki navigation lines" 1 "$(jq "[.[] | select(.line.kind == \"navigation\")] | length" "$TMP/lines.json")"
 check "Loki web_vitals lines" 3 "$(jq "[.[] | select(.line.kind == \"web_vitals\")] | length" "$TMP/lines.json")"
 check "Loki navigation stream labels" "$nav_stream" "$(jq -cS '[.[] | select(.line.kind == "navigation") | .stream] | unique | .[]' "$TMP/lines.json")"
+check "Loki soft_navigation lines" 1 "$(jq "[.[] | select(.line.kind == \"soft_navigation\")] | length" "$TMP/lines.json")"
+check "Loki soft_navigation stream labels" "$soft_stream" "$(jq -cS '[.[] | select(.line.kind == "soft_navigation") | .stream] | unique | .[]' "$TMP/lines.json")"
 check "Loki web_vitals stream labels" "$wv_stream" "$(jq -cS '[.[] | select(.line.kind == "web_vitals") | .stream] | unique | .[]' "$TMP/lines.json")"
 check "Loki web_vitals metrics" "FCP,LCP,TTFB" "$(jq -r '[.[] | select(.line.kind == "web_vitals") | .line.metric] | sort | join(",")' "$TMP/lines.json")"
 # タイムスタンプはビーコンの ts（ミリ秒）から。Loki のは文字列のナノ秒、本文の ts は RFC3339
@@ -157,6 +164,9 @@ check "Loki line ts" "$(jq -nr --argjson t "$ts" '$t / 1000 | todate')" "$(jq -r
 check "Loki navigation line" \
   '{"asn":"2516","browser":"chrome","cf_cache":"HIT","cf_colo":"NRT","conn":"4g","country":"JP","decoded_size":61440,"device":"desktop","dns_ms":0,"encoded_size":15060,"os":"macos","path_group":"event","protocol":"h2","request_ms":95,"response_ms":30,"tcp_ms":12,"tls_ms":8,"transfer_size":15360}' \
   "$(jq -cS '.[] | select(.line.kind == "navigation") | .line | del(.kind, .service, .path, .ts)' "$TMP/lines.json")"
+check "Loki soft_navigation line" \
+  '{"asn":"2516","browser":"chrome","conn":"4g","country":"JP","device":"desktop","nav_type":"soft","os":"macos","path_group":"event"}' \
+  "$(jq -cS '.[] | select(.line.kind == "soft_navigation") | .line | del(.kind, .service, .path, .ts)' "$TMP/lines.json")"
 check "Loki LCP line" \
   '{"browser":"chrome","conn":"4g","device":"desktop","metric":"LCP","metric_id":"v4-e2e-lcp","nav_type":"navigate","os":"macos","path_group":"event","rating":"good","value":1800}' \
   "$(jq -cS '.[] | select(.line.metric == "LCP") | .line | del(.kind, .service, .path, .ts)' "$TMP/lines.json")"

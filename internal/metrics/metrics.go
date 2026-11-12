@@ -98,7 +98,7 @@ func New() *Metrics {
 		}, cfCacheLabels),
 		pageviewTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_pageview_total",
-			Help: "Page loads by device, OS and browser (one per navigation event)",
+			Help: "Page views by device, OS and browser (one per navigation event, and one per SPA route change with nav_type=soft)",
 		}, pageviewLabels),
 		// country/asn kept in their own low-dimensional counters so their
 		// ~country and ~ASN cardinality never multiplies the other label sets.
@@ -163,8 +163,10 @@ func (m *Metrics) IncCFCache(service, pathGroup, status, protocol, device string
 	m.cfCacheTotal.WithLabelValues(service, pathGroup, status, protocol, device).Inc()
 }
 
-// IncPageview increments the per-page-load counter that carries OS/browser
-// distribution (kept off the histograms to protect their cardinality).
+// IncPageview increments the page-view counter that carries OS/browser
+// distribution (kept off the histograms to protect their cardinality). It is
+// incremented once per document load and once per SPA route change
+// (nav_type="soft").
 func (m *Metrics) IncPageview(service, pathGroup, device, os, browser, navType string) {
 	m.pageviewTotal.WithLabelValues(service, pathGroup, device, os, browser, navType).Inc()
 }

@@ -151,7 +151,7 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 - Loki は compose 内の偽サーバー（[e2e/fake-loki/server.py](../e2e/fake-loki/server.py)。標準ライブラリだけ）に置き換えている。受けた push を記録するだけで、判定は smoke.sh が行う。本番のコードは変えておらず、`LOKI_URL` を向けているだけ。
 - コレクタは Loki へ5秒ごとにまとめて送る。それを待たずに確かめるため、smoke.sh は最後にコレクタを止める（本番の rollout と同じ SIGTERM。止まる前に溜まったログを送り切る）。rollout でログを落とさないことも、これで見ている。
 - 送るものは beacon.js が実際に送るものと同じ形にしている（`sendBeacon` に text/plain の Blob、`Origin` 付き、読み込み時は配列・離脱時の1件はオブジェクト）。beacon.js の送り方を変えたら smoke.sh も合わせる。
-- ブラウザでの確認は [e2e/browser](../e2e/browser/tests/beacon.spec.ts)（Playwright・Chromium）。計測対象のサイトに `<script async src=".../beacon.js">` を1行入れたページを作り、beacon.js・rum-config.json・web-vitals.js が 200 で読めること、未捕捉の JS 例外と CSP 違反が無いこと（サイト側の CSP はコレクタのオリジンだけを許す厳しいもの）、読み込み時のビーコンが `/collect` に届くことだけを見る。中身の検証は smoke.sh に任せる。
+- ブラウザでの確認は [e2e/browser](../e2e/browser/tests/beacon.spec.ts)（Playwright・Chromium）。計測対象のサイトに `<script async src=".../beacon.js">` を1行入れたページを作り、beacon.js・rum-config.json・web-vitals.js が 200 で読めること、未捕捉の JS 例外と CSP 違反が無いこと（サイト側の CSP はコレクタのオリジンだけを許す厳しいもの）、読み込み時のビーコンが `/collect` に届くこと、SPA の画面遷移（`history.pushState` など）で `soft_navigation` が送られることだけを見る。中身の検証は smoke.sh に任せる。
   - ページは Playwright が route で返す（サーバーは要らない）。そのページは Chrome の Local Network Access で公開サイト扱いになり、127.0.0.1 のコレクタへの通信を止められるので、テストでは `local-network-access` の許可を与えている（本番は公開サイトから公開の rum.piyo.me を読むので当たらない）。
   - ブラウザのビーコンも smoke.sh が差で見ているカウンタに数えられるので、smoke.sh の後に、コレクタを起こし直してから回す。
 - 画面操作やリトライは入れない。起動待ちだけは、distroless にシェルが無くコンテナ内の healthcheck が書けないので、外から `/healthz` を curl で待つ。
