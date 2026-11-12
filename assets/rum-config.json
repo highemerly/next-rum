@@ -51,8 +51,14 @@
       { "pattern": "/admin/**",        "group": "admin" }
     ],
     "anypost": [
-      { "pattern": "/",       "group": "home" },
-      { "pattern": "/posts/**","group": "post" }
+      { "pattern": "/",         "group": "home" },
+      { "pattern": "/share",    "group": "share" },
+      { "pattern": "/howto",    "group": "docs" },
+      { "pattern": "/services", "group": "docs" },
+      { "pattern": "/contact",  "group": "docs" },
+      { "pattern": "/privacy",  "group": "legal" },
+      { "pattern": "/terms",    "group": "legal" },
+      { "pattern": "/license",  "group": "legal" }
     ],
     "hosteka": [
       { "pattern": "/",                   "group": "home" },
