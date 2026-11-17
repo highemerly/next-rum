@@ -65,6 +65,24 @@ func counterValue(t *testing.T, mx *metrics.Metrics, name string, labels map[str
 	return 0
 }
 
+// counterSum adds up every series of a counter (counterValue returns the first match).
+func counterSum(t *testing.T, mx *metrics.Metrics, name string) float64 {
+	t.Helper()
+	fams, err := mx.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sum float64
+	for _, fam := range fams {
+		if fam.GetName() == name {
+			for _, m := range fam.GetMetric() {
+				sum += m.GetCounter().GetValue()
+			}
+		}
+	}
+	return sum
+}
+
 func labelsMatch(m *dto.Metric, want map[string]string) bool {
 	got := map[string]string{}
 	for _, lp := range m.GetLabel() {
@@ -228,5 +246,102 @@ func TestCollectSoftNavTypeOnlyFromSoftNavigation(t *testing.T) {
 	}
 	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"nav_type": "soft"}); v != 0 {
 		t.Errorf("pageview soft = %v, want 0", v)
+	}
+}
+
+const featuresCfgJSON = `{
+  "services": { "hosteka.piyo.me": "hosteka", "handon.club": "handon" },
+  "default_service": "unknown",
+  "default_path_group": "other",
+  "path_groups": {
+    "hosteka": [ { "pattern": "/events/*", "group": "event" } ],
+    "handon":  [ { "pattern": "/web/**", "group": "web_ui" } ]
+  },
+  "features": { "hosteka": ["referrer", "auth"] },
+  "referrer_groups": [ { "pattern": "mastodon.social", "group": "mastodon.social" } ]
+}`
+
+func newFeaturesHandler(t *testing.T) (*Handler, *metrics.Metrics) {
+	t.Helper()
+	path := t.TempDir() + "/rum-config.json"
+	if err := os.WriteFile(path, []byte(featuresCfgJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loader, err := config.NewLoader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mx := metrics.New()
+	return NewHandler(loader, mx, loki.New(loki.Options{}), Options{}), mx
+}
+
+func TestCollectReferrerOnFreshNavigation(t *testing.T) {
+	h, mx := newFeaturesHandler(t)
+	post(t, h, `[
+	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"mastodon.social"},
+	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"alice.example"},
+	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate"},
+	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"reload","referrer":"mastodon.social"}
+	]`)
+	for ref, want := range map[string]float64{"mastodon.social": 1, "other": 1, "direct": 1} {
+		if v := counterValue(t, mx, "rum_referrer_total", map[string]string{"service": "hosteka", "path_group": "event", "referrer": ref}); v != want {
+			t.Errorf("referrer %s = %v, want %v", ref, v, want)
+		}
+	}
+	// The reload keeps the original referrer; counting it would count the arrival twice.
+	if v := counterSum(t, mx, "rum_referrer_total"); v != 3 {
+		t.Errorf("referrer total = %v, want 3 (reload not counted)", v)
+	}
+}
+
+func TestCollectAuthOnPageviews(t *testing.T) {
+	h, mx := newFeaturesHandler(t)
+	post(t, h, `[
+	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate","auth":"in"},
+	  {"kind":"soft_navigation","service":"hosteka","path_group":"event","path":"/events/1","device":"mobile","auth":"out"},
+	  {"kind":"soft_navigation","service":"hosteka","path_group":"event","path":"/events/2","device":"mobile","auth":"admin"},
+	  {"kind":"web_vitals","service":"hosteka","path_group":"event","name":"LCP","value":1000,"rating":"good","device":"mobile","nav_type":"navigate","auth":"in"}
+	]`)
+	cases := []struct {
+		auth, navType string
+		want          float64
+	}{
+		{"in", "navigate", 1},
+		{"out", "soft", 1},
+		{"unknown", "soft", 1}, // anything but in/out clamps
+	}
+	for _, tc := range cases {
+		if v := counterValue(t, mx, "rum_pageview_auth_total", map[string]string{"service": "hosteka", "auth": tc.auth, "nav_type": tc.navType}); v != tc.want {
+			t.Errorf("auth %s/%s = %v, want %v", tc.auth, tc.navType, v, tc.want)
+		}
+	}
+	// web_vitals is not a page view.
+	if v := counterSum(t, mx, "rum_pageview_auth_total"); v != 3 {
+		t.Errorf("auth total = %v, want 3", v)
+	}
+}
+
+func TestCollectOptInSignalsIgnoredWithoutFeature(t *testing.T) {
+	h, mx := newFeaturesHandler(t)
+	// handon has not opted in, and EVIL is rejected to the fallback service:
+	// whatever the client sends, neither counter moves.
+	post(t, h, `[
+	  {"kind":"navigation","service":"handon","path_group":"web_ui","device":"desktop","nav_type":"navigate","referrer":"mastodon.social","auth":"in"},
+	  {"kind":"soft_navigation","service":"handon","path_group":"web_ui","path":"/web/x","device":"desktop","auth":"in"},
+	  {"kind":"navigation","service":"EVIL","path_group":"x","device":"desktop","nav_type":"navigate","referrer":"mastodon.social","auth":"in"}
+	]`)
+	for _, name := range []string{"rum_referrer_total", "rum_pageview_auth_total"} {
+		if v := counterSum(t, mx, name); v != 0 {
+			t.Errorf("%s = %v, want 0", name, v)
+		}
+	}
+}
+
+func TestSanitizeAuth(t *testing.T) {
+	cases := map[string]string{"in": "in", "out": "out", "": "unknown", "IN": "unknown", "admin": "unknown"}
+	for in, want := range cases {
+		if got := sanitizeAuth(in); got != want {
+			t.Errorf("sanitizeAuth(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

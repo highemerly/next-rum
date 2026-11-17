@@ -69,6 +69,40 @@ so their large value spaces don't multiply other labels). The header names are
 configurable (`GEO_COUNTRY_HEADER` / `GEO_ASN_HEADER`) so the CF rule can be
 renamed without a rebuild. Setup: `deploy/cloudflare/transform-rules.md`.
 
+### Opt-in signals: referrer and login state
+
+Two more signals are **off unless a service lists them** under `features` in
+`rum-config.json`. Each one is a data item the service's privacy policy has to
+name first, so the switch sits in the config, per service; the loader does not
+send them and the collector ignores them for any service that has not opted in.
+
+```json
+"features": { "hosteka": ["referrer", "auth"] },
+"referrer_groups": [
+  { "pattern": "mastodon.social", "group": "mastodon.social" },
+  { "pattern": "*.google.*",      "group": "search" }
+]
+```
+
+- **`referrer`** — on a document load, the loader sends only the **host** of
+  `document.referrer` (never its path or query). The collector turns it into a
+  group and **stores the group, never the host**: on the Fediverse a host is
+  often a single-user instance, which would name the visitor. Groups, in order:
+  `direct` (no referrer), `internal` (the service's own host), the id of another
+  configured service, the first matching `referrer_groups` rule (`*` spans dots in
+  a host), else `other`. Counted in `rum_referrer_total{service,path_group,referrer}`
+  for `nav_type="navigate"` only — a reload or back/forward keeps the original
+  referrer and would count the same arrival again — and added to the Loki line.
+  Whether a referrer arrives at all is up to the linking site's Referrer-Policy
+  (e.g. a `same-origin` site sends none, and apps send none), so `direct` also
+  holds visitors whose source was hidden.
+- **`auth`** — the page declares the viewer's login state with
+  `<html data-rum-auth="in">` / `"out"`; the loader reads it at each page view
+  (document load and SPA route change), so a page that updates the attribute on
+  login/logout is followed. Anything else is `unknown`. Counted in
+  `rum_pageview_auth_total{service,path_group,auth,nav_type}` and added to the
+  Loki line. It is a yes/no, not an identity.
+
 ## Layout
 
 ```
@@ -175,6 +209,9 @@ One line, identical on every service:
 - Misskey (`mi.hiyoko.club`): Cloudflare Worker (`deploy/cloudflare-worker/`).
 - Every zone: add the Server-Timing Transform Rule (`deploy/cloudflare/`) so cache
   status is visible to the browser.
+- Login state (only with the `auth` feature): set `data-rum-auth="in"` / `"out"`
+  on `<html>` before the loader reads it, and update it when the state changes
+  without a page load.
 
 ## Release / deploy
 

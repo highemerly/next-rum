@@ -125,3 +125,80 @@ func TestValidatePathGroup(t *testing.T) {
 		t.Errorf("default group: got %q rejected=%v", got, rejected)
 	}
 }
+
+const featuresJSON = `{
+  "services": {
+    "hosteka.piyo.me": "hosteka",
+    "anypost.dev":     "anypost"
+  },
+  "default_service": "unknown",
+  "default_path_group": "other",
+  "path_groups": { "*": [ { "pattern": "/", "group": "home" } ] },
+  "features": { "hosteka": ["referrer", "auth"] },
+  "referrer_groups": [
+    { "pattern": "mastodon.social", "group": "mastodon.social" },
+    { "pattern": "*.google.*",      "group": "search" },
+    { "pattern": "google.*",        "group": "search" }
+  ]
+}`
+
+func TestHasFeature(t *testing.T) {
+	c, err := Compile([]byte(featuresJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.HasFeature("hosteka", FeatureReferrer) || !c.HasFeature("hosteka", FeatureAuth) {
+		t.Error("hosteka should have referrer and auth")
+	}
+	// Off unless listed: a service that did not opt in, and an unknown service.
+	if c.HasFeature("anypost", FeatureReferrer) || c.HasFeature("nope", FeatureAuth) {
+		t.Error("features must be off unless listed")
+	}
+	// No "features" key at all.
+	if mustCompile(t).HasFeature("handon", FeatureAuth) {
+		t.Error("features must be off when the key is absent")
+	}
+}
+
+func TestCompileRejectsUnknownFeature(t *testing.T) {
+	_, err := Compile([]byte(`{"services":{},"features":{"hosteka":["referer"]}}`))
+	if err == nil {
+		t.Fatal("a misspelled feature must be a config error, not silently off")
+	}
+}
+
+func TestCompileRejectsEmptyReferrerGroup(t *testing.T) {
+	_, err := Compile([]byte(`{"services":{},"referrer_groups":[{"pattern":"a.example","group":""}]}`))
+	if err == nil {
+		t.Fatal("an empty referrer group must be a config error")
+	}
+}
+
+func TestResolveReferrer(t *testing.T) {
+	c, err := Compile([]byte(featuresJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ host, want string }{
+		{"", "direct"},
+		{"  ", "direct"},
+		{"hosteka.piyo.me", "internal"},  // own host
+		{"HOSTEKA.piyo.me.", "internal"}, // case and trailing dot
+		{"anypost.dev", "anypost"},       // another configured service -> its id
+		{"mastodon.social", "mastodon.social"},
+		{"www.google.co.jp", "search"}, // * spans dots in a host
+		{"google.com", "search"},
+		{"alice.example", "other"},     // unlisted: never the host itself
+		{"evil.example/../x", "other"}, // not a host name
+		{"Ünïcode.example", "other"},
+	}
+	for _, tc := range cases {
+		if got := c.ResolveReferrer("hosteka", tc.host); got != tc.want {
+			t.Errorf("ResolveReferrer(hosteka, %q) = %q, want %q", tc.host, got, tc.want)
+		}
+	}
+	// "internal" is relative to the service the page belongs to.
+	if got := c.ResolveReferrer("anypost", "hosteka.piyo.me"); got != "hosteka" {
+		t.Errorf("ResolveReferrer(anypost, hosteka host) = %q, want hosteka", got)
+	}
+}

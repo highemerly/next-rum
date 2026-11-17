@@ -24,7 +24,31 @@ type rawConfig struct {
 	DefaultService   string                `json:"default_service"`
 	DefaultPathGroup string                `json:"default_path_group"`
 	PathGroups       map[string][]PathRule `json:"path_groups"`
+	Features         map[string][]string   `json:"features"`
+	ReferrerGroups   []PathRule            `json:"referrer_groups"`
 }
+
+// Optional signals a service must opt into via "features". They are off by
+// default because each one is a data item the service's privacy policy has to
+// name before it is collected.
+const (
+	// FeatureReferrer: the host of document.referrer on a document load,
+	// classified into a referrer group (the raw host is never stored).
+	FeatureReferrer = "referrer"
+	// FeatureAuth: whether the viewer is logged in, as declared by the page
+	// with <html data-rum-auth="in|out">.
+	FeatureAuth = "auth"
+)
+
+var knownFeatures = map[string]struct{}{FeatureReferrer: {}, FeatureAuth: {}}
+
+// Referrer groups the collector assigns itself, in addition to the ones listed
+// in referrer_groups and the ids of the other configured services.
+const (
+	ReferrerDirect   = "direct"   // no referrer (typed URL, app, noreferrer link)
+	ReferrerInternal = "internal" // the service's own host
+	ReferrerOther    = "other"    // a host no rule names
+)
 
 type compiledRule struct {
 	re    *regexp.Regexp
@@ -43,6 +67,9 @@ type Config struct {
 
 	validServices map[string]struct{}            // allowed service label values
 	groupSets     map[string]map[string]struct{} // service id (or "*") -> allowed group label values
+
+	features       map[string]map[string]struct{} // service id -> enabled features
+	referrerGroups []compiledRule                 // host glob -> referrer group, in order
 }
 
 // Raw returns the original JSON bytes, served verbatim at /rum-config.json so the
@@ -113,7 +140,81 @@ func Compile(raw []byte) (*Config, error) {
 		c.validServices[rc.DefaultService] = struct{}{}
 	}
 
+	// A misspelled feature would silently stay off, so it is a config error.
+	c.features = make(map[string]map[string]struct{}, len(rc.Features))
+	for svc, names := range rc.Features {
+		set := make(map[string]struct{}, len(names))
+		for _, n := range names {
+			if _, ok := knownFeatures[n]; !ok {
+				return nil, fmt.Errorf("service %q: unknown feature %q", svc, n)
+			}
+			set[n] = struct{}{}
+		}
+		c.features[svc] = set
+	}
+
+	// Host globs reuse the path glob: a host has no "/", so * matches across
+	// dots ("*.example.com" matches "a.b.example.com").
+	for _, r := range rc.ReferrerGroups {
+		re, err := globToRegExp(strings.ToLower(r.Pattern))
+		if err != nil {
+			return nil, fmt.Errorf("referrer pattern %q: %w", r.Pattern, err)
+		}
+		if r.Group == "" {
+			return nil, fmt.Errorf("referrer pattern %q: empty group", r.Pattern)
+		}
+		c.referrerGroups = append(c.referrerGroups, compiledRule{re: re, group: r.Group})
+	}
+
 	return c, nil
+}
+
+// HasFeature reports whether service opted into the named feature.
+func (c *Config) HasFeature(service, feature string) bool {
+	_, ok := c.features[service][feature]
+	return ok
+}
+
+// ResolveReferrer classifies the referrer host of a document load on service
+// into a bounded label. Only a group name is ever returned, never the host
+// itself: on the Fediverse a host is often a single-user instance, which would
+// name the visitor. Order: no host -> direct; the service's own host ->
+// internal; another configured service's host -> that service id;
+// referrer_groups (first match) -> its group; anything else -> other.
+func (c *Config) ResolveReferrer(service, host string) string {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "" {
+		return ReferrerDirect
+	}
+	if !validHost(host) {
+		return ReferrerOther
+	}
+	if id, ok := c.services[host]; ok {
+		if id == service {
+			return ReferrerInternal
+		}
+		return id
+	}
+	for _, r := range c.referrerGroups {
+		if r.re.MatchString(host) {
+			return r.group
+		}
+	}
+	return ReferrerOther
+}
+
+// validHost accepts a DNS name (letters, digits, '-', '.'; at most 253 bytes).
+func validHost(h string) bool {
+	if len(h) > 253 {
+		return false
+	}
+	for i := 0; i < len(h); i++ {
+		b := h[i]
+		if !(b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '-' || b == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 // ResolveService maps a hostname to its service identifier, falling back to
