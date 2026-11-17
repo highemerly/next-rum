@@ -69,6 +69,44 @@ so their large value spaces don't multiply other labels). The header names are
 configurable (`GEO_COUNTRY_HEADER` / `GEO_ASN_HEADER`) so the CF rule can be
 renamed without a rebuild. Setup: `deploy/cloudflare/transform-rules.md`.
 
+### Opt-in signals: referrer and login state
+
+Two more signals are **off unless a service lists them** under `features` in
+`rum-config.json`. Each one is a data item the service's privacy policy has to
+name first, so the switch sits in the config, per service; the loader does not
+send them and the collector ignores them for any service that has not opted in.
+
+```json
+"features": { "hosteka": ["referrer", "auth"] }
+```
+
+- **`referrer`** — on a document load, the loader sends only the **host** of
+  `document.referrer` (never its path or query). The metric
+  `rum_referrer_total{service,path_group,referrer}` carries **one of four
+  values**, so a client posting made-up hosts cannot mint new series:
+  - `direct` — no referrer (typed URL, bookmark, app, or the source withheld it)
+  - `internal` — the service's own host
+  - `search` — a web search results page: Google (any country domain, and its
+    Android app), Bing, Yahoo! JAPAN and Yahoo, DuckDuckGo, Japanese portals
+    (goo, BIGLOBE, @nifty, Rakuten, docomo, au), Brave, Ecosia, Startpage,
+    Qwant, Kagi and regional engines. The list and its tests live in
+    `internal/referrer`; AI assistants are not in it.
+  - `other` — everything else, including the operator's other services
+
+  The Loki line carries the same label as `referrer` and the normalized host
+  as `referrer_host` (omitted when there is none or it is not a host name), so
+  `other` can be broken down there. Counted for `nav_type="navigate"` only — a
+  reload or back/forward keeps the original referrer and would count the same
+  arrival again. Whether a referrer arrives at all is up to the linking site's
+  Referrer-Policy (e.g. a `same-origin` site sends none, and apps send none), so
+  `direct` also holds visitors whose source was hidden.
+- **`auth`** — the page declares the viewer's login state with
+  `<html data-rum-auth="in">` / `"out"`; the loader reads it at each page view
+  (document load and SPA route change), so a page that updates the attribute on
+  login/logout is followed. Anything else is `unknown`. Counted in
+  `rum_pageview_auth_total{service,path_group,auth,nav_type}` and added to the
+  Loki line. It is a yes/no, not an identity.
+
 ## Layout
 
 ```
@@ -80,6 +118,7 @@ cmd/rum-collector/       main: env, config hot-reload, graceful shutdown
 internal/
   config/                rum-config.json compile, glob, label validation (+tests)
   metrics/               Prometheus histograms/counters (design §8)
+  referrer/              referrer host -> direct/internal/search/other (+tests)
   loki/                  batched /loki/api/v1/push client
   collect/               POST /collect handler (+tests)
   server/                routes, CORS, embedded-asset serving
@@ -175,6 +214,9 @@ One line, identical on every service:
 - Misskey (`mi.hiyoko.club`): Cloudflare Worker (`deploy/cloudflare-worker/`).
 - Every zone: add the Server-Timing Transform Rule (`deploy/cloudflare/`) so cache
   status is visible to the browser.
+- Login state (only with the `auth` feature): set `data-rum-auth="in"` / `"out"`
+  on `<html>` before the loader reads it, and update it when the state changes
+  without a page load.
 
 ## Release / deploy
 

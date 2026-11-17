@@ -31,6 +31,10 @@ type event struct {
 	TS        int64  `json:"ts"` // unix milliseconds
 	NavType   string `json:"nav_type"`
 
+	// Opt-in per service (rum-config.json "features"); ignored otherwise.
+	Referrer string `json:"referrer"` // host of document.referrer (navigation only)
+	Auth     string `json:"auth"`     // "in" / "out" from <html data-rum-auth>
+
 	// web_vitals
 	Name     string  `json:"name"`
 	Value    float64 `json:"value"`
@@ -162,6 +166,14 @@ func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 		status = "label_rejected"
 	}
 
+	// Opt-in signals. A service that has not opted in gets neither the counter
+	// nor the Loki field, whatever the client sends — the switch lives in the
+	// config the operator controls, next to the privacy policy that names it.
+	// A rejected service is the fallback id, which never opts in.
+	withAuth := !svcRejected && cfg.HasFeature(service, config.FeatureAuth)
+	withReferrer := !svcRejected && cfg.HasFeature(service, config.FeatureReferrer)
+	auth := sanitizeAuth(ev.Auth)
+
 	recorded := true
 	switch ev.Kind {
 	case "web_vitals":
@@ -201,7 +213,7 @@ func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 		h.mx.IncPageview(service, pathGroup, device, os, browser, navType)
 		h.mx.IncCountry(service, country)
 		h.mx.IncASN(service, asn)
-		h.pushLoki(service, "navigation", ev.TS, map[string]any{
+		fields := map[string]any{
 			"service": service, "kind": "navigation",
 			"path_group": pathGroup, "path": ev.Path,
 			"dns_ms": ev.DNSMs, "tcp_ms": ev.TCPMs, "tls_ms": ev.TLSMs,
@@ -211,7 +223,25 @@ func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 			"cf_cache": cfCache, "cf_colo": ev.CFColo,
 			"device": device, "os": os, "browser": browser, "conn": ev.Conn,
 			"country": country, "asn": asn,
-		})
+		}
+		// Only a fresh navigation says where the visitor came from: a reload or
+		// back/forward keeps the referrer of the original load and would count
+		// the same arrival again.
+		// The metric gets one of four labels; the Loki line also keeps the host,
+		// which is free there and lets "other" be broken down later.
+		if withReferrer && navType == "navigate" {
+			ref, host := cfg.ResolveReferrer(service, ev.Referrer)
+			h.mx.IncReferrer(service, pathGroup, ref)
+			fields["referrer"] = ref
+			if host != "" {
+				fields["referrer_host"] = host
+			}
+		}
+		if withAuth {
+			h.mx.IncPageviewAuth(service, pathGroup, auth, navType)
+			fields["auth"] = auth
+		}
+		h.pushLoki(service, "navigation", ev.TS, fields)
 
 	case "soft_navigation":
 		// A client-side route change in a SPA (history.pushState / popstate):
@@ -221,12 +251,18 @@ func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 		// tell route changes from document loads. country/asn stay per document
 		// load, so they are not incremented again for each route change.
 		h.mx.IncPageview(service, pathGroup, device, os, browser, navTypeSoft)
-		h.pushLoki(service, "soft_navigation", ev.TS, map[string]any{
+		fields := map[string]any{
 			"service": service, "kind": "soft_navigation",
 			"path_group": pathGroup, "path": ev.Path, "nav_type": navTypeSoft,
 			"device": device, "os": os, "browser": browser, "conn": ev.Conn,
 			"country": country, "asn": asn,
-		})
+		}
+		// No referrer here: a route change inside the app has no outside source.
+		if withAuth {
+			h.mx.IncPageviewAuth(service, pathGroup, auth, navTypeSoft)
+			fields["auth"] = auth
+		}
+		h.pushLoki(service, "soft_navigation", ev.TS, fields)
 
 	default:
 		recorded = false
@@ -283,6 +319,12 @@ func sanitizeNavType(v string) string { return inSet(v, navTypeSet, "unknown") }
 // navTypeSet: only the soft_navigation kind may produce it, so a web_vitals or
 // navigation event claiming nav_type "soft" still clamps to "unknown".
 const navTypeSoft = "soft"
+
+var authSet = map[string]struct{}{"in": {}, "out": {}}
+
+// sanitizeAuth clamps the page-declared login state; a page that did not set
+// data-rum-auth (or set anything else) is "unknown".
+func sanitizeAuth(v string) string { return inSet(v, authSet, "unknown") }
 
 var ratingSet = map[string]struct{}{
 	"good": {}, "needs-improvement": {}, "poor": {},

@@ -42,6 +42,11 @@ type Metrics struct {
 	countryTotal  *prometheus.CounterVec
 	asnTotal      *prometheus.CounterVec
 
+	// Opt-in per service (rum-config.json "features"); see config.FeatureReferrer
+	// and config.FeatureAuth.
+	referrerTotal     *prometheus.CounterVec
+	pageviewAuthTotal *prometheus.CounterVec
+
 	receivedTotal  *prometheus.CounterVec
 	parseSeconds   prometheus.Histogram
 	lokiPushErrors prometheus.Counter
@@ -55,6 +60,8 @@ var (
 	pageviewLabels = []string{"service", "path_group", "device", "os", "browser", "nav_type"}
 	countryLabels  = []string{"service", "country"}
 	asnLabels      = []string{"service", "asn"}
+	referrerLabels = []string{"service", "path_group", "referrer"}
+	authLabels     = []string{"service", "path_group", "auth", "nav_type"}
 )
 
 // New builds and registers all collectors.
@@ -110,6 +117,14 @@ func New() *Metrics {
 			Name: "rum_asn_total",
 			Help: "Page loads by visitor AS number (CF edge; no IP stored)",
 		}, asnLabels),
+		referrerTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_referrer_total",
+			Help: "Document loads (nav_type=navigate) by referrer: direct, internal, search or other",
+		}, referrerLabels),
+		pageviewAuthTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_pageview_auth_total",
+			Help: "Page views (document loads and SPA route changes) by whether the viewer is logged in (in/out/unknown)",
+		}, authLabels),
 		receivedTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_collector_received_total",
 			Help: "Collected events by kind and status (ok/parse_error/label_rejected)",
@@ -179,6 +194,16 @@ func (m *Metrics) IncCountry(service, country string) {
 // IncASN increments the per-page-load counter for the visitor AS number.
 func (m *Metrics) IncASN(service, asn string) {
 	m.asnTotal.WithLabelValues(service, asn).Inc()
+}
+
+// IncReferrer increments the per-document-load counter for the referrer group.
+func (m *Metrics) IncReferrer(service, pathGroup, referrer string) {
+	m.referrerTotal.WithLabelValues(service, pathGroup, referrer).Inc()
+}
+
+// IncPageviewAuth increments the page-view counter split by login state.
+func (m *Metrics) IncPageviewAuth(service, pathGroup, auth, navType string) {
+	m.pageviewAuthTotal.WithLabelValues(service, pathGroup, auth, navType).Inc()
 }
 
 // IncReceived records a /collect outcome (status = ok/parse_error/label_rejected).

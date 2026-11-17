@@ -125,3 +125,70 @@ func TestValidatePathGroup(t *testing.T) {
 		t.Errorf("default group: got %q rejected=%v", got, rejected)
 	}
 }
+
+const featuresJSON = `{
+  "services": {
+    "hosteka.piyo.me": "hosteka",
+    "anypost.dev":     "anypost"
+  },
+  "default_service": "unknown",
+  "default_path_group": "other",
+  "path_groups": { "*": [ { "pattern": "/", "group": "home" } ] },
+  "features": { "hosteka": ["referrer", "auth"] }
+}`
+
+func TestHasFeature(t *testing.T) {
+	c, err := Compile([]byte(featuresJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.HasFeature("hosteka", FeatureReferrer) || !c.HasFeature("hosteka", FeatureAuth) {
+		t.Error("hosteka should have referrer and auth")
+	}
+	// Off unless listed: a service that did not opt in, and an unknown service.
+	if c.HasFeature("anypost", FeatureReferrer) || c.HasFeature("nope", FeatureAuth) {
+		t.Error("features must be off unless listed")
+	}
+	// No "features" key at all.
+	if mustCompile(t).HasFeature("handon", FeatureAuth) {
+		t.Error("features must be off when the key is absent")
+	}
+}
+
+func TestCompileRejectsUnknownFeature(t *testing.T) {
+	_, err := Compile([]byte(`{"services":{},"features":{"hosteka":["referer"]}}`))
+	if err == nil {
+		t.Fatal("a misspelled feature must be a config error, not silently off")
+	}
+}
+
+func TestResolveReferrer(t *testing.T) {
+	c, err := Compile([]byte(featuresJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ raw, label, host string }{
+		{"", "direct", ""},
+		{"  ", "direct", ""},
+		{"hosteka.piyo.me", "internal", "hosteka.piyo.me"},
+		{"HOSTEKA.piyo.me.", "internal", "hosteka.piyo.me"}, // case and trailing dot
+		{"anypost.dev", "other", "anypost.dev"},             // another service is not internal
+		{"www.google.co.jp", "search", "www.google.co.jp"},
+		{"mastodon.social", "other", "mastodon.social"},
+		{"evil.example/../x", "other", ""}, // not a host name: no host kept
+		{"Ünïcode.example", "other", ""},
+	}
+	for _, tc := range cases {
+		label, host := c.ResolveReferrer("hosteka", tc.raw)
+		if label != tc.label || host != tc.host {
+			t.Errorf("ResolveReferrer(hosteka, %q) = %q, %q; want %q, %q", tc.raw, label, host, tc.label, tc.host)
+		}
+	}
+	// "internal" is relative to the service the page belongs to.
+	if label, _ := c.ResolveReferrer("anypost", "anypost.dev"); label != "internal" {
+		t.Errorf("ResolveReferrer(anypost, own host) = %q, want internal", label)
+	}
+	if label, _ := c.ResolveReferrer("anypost", "hosteka.piyo.me"); label != "other" {
+		t.Errorf("ResolveReferrer(anypost, hosteka host) = %q, want other", label)
+	}
+}

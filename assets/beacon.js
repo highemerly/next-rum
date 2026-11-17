@@ -132,6 +132,17 @@
     return 'other';
   }
 
+  // ---- opt-in signals (rum-config.json "features"; off unless the service lists them) ----
+  // Host only: the path and query of the previous page never leave the browser.
+  function getReferrerHost() {
+    try { return document.referrer ? new URL(document.referrer).hostname : ''; } catch (e) { return ''; }
+  }
+  // The page declares its login state as <html data-rum-auth="in|out">. Read at
+  // each page view, so a page that updates it on login/logout is followed.
+  function getAuth() {
+    return document.documentElement.getAttribute('data-rum-auth') || '';
+  }
+
   function post(obj) {
     try {
       var blob = new Blob([JSON.stringify(obj)], { type: 'text/plain' }); // avoid CORS preflight
@@ -154,6 +165,8 @@
     var cfg = res[0], m = res[1];
     var service    = resolveService(cfg);
     var path_group = resolvePathGroup(cfg, service);
+    var features   = (cfg.features && cfg.features[service]) || [];
+    function enabled(name) { return features.indexOf(name) >= 0; }
     // Captured once, next to path_group, because the two must describe the same
     // page. The tail batch flushes at page hide, and in a client-side-routed app
     // (Next.js, Misskey, Mastodon's /web) the visitor may have soft-navigated
@@ -222,6 +235,8 @@
     navEvent.kind = 'navigation';
     for (var k in navInfo) navEvent[k] = navInfo[k];
     for (var c in cfInfo) navEvent[c] = cfInfo[c];
+    if (enabled('referrer')) navEvent.referrer = getReferrerHost();
+    if (enabled('auth')) navEvent.auth = getAuth();
     queue.push(navEvent);
 
     var loadFlushed = false;
@@ -252,6 +267,7 @@
       ev.path = p;
       ev.path_group = resolvePathGroup(cfg, service);
       ev.nav_type = 'soft';
+      if (enabled('auth')) ev.auth = getAuth();
       queue.push(ev);
       // Before the load window closes, ride along with the load batch; after it,
       // send now rather than holding the event until the page is hidden, which

@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"sync/atomic"
+
+	"github.com/highemerly/rum-collector/internal/referrer"
 )
 
 // PathRule is a single glob pattern -> group label mapping.
@@ -24,7 +26,23 @@ type rawConfig struct {
 	DefaultService   string                `json:"default_service"`
 	DefaultPathGroup string                `json:"default_path_group"`
 	PathGroups       map[string][]PathRule `json:"path_groups"`
+	Features         map[string][]string   `json:"features"`
 }
+
+// Optional signals a service must opt into via "features". They are off by
+// default because each one is a data item the service's privacy policy has to
+// name before it is collected.
+const (
+	// FeatureReferrer: the host of document.referrer on a document load. The
+	// metric gets one of four labels (package referrer); the Loki line also
+	// gets the host itself.
+	FeatureReferrer = "referrer"
+	// FeatureAuth: whether the viewer is logged in, as declared by the page
+	// with <html data-rum-auth="in|out">.
+	FeatureAuth = "auth"
+)
+
+var knownFeatures = map[string]struct{}{FeatureReferrer: {}, FeatureAuth: {}}
 
 type compiledRule struct {
 	re    *regexp.Regexp
@@ -43,6 +61,8 @@ type Config struct {
 
 	validServices map[string]struct{}            // allowed service label values
 	groupSets     map[string]map[string]struct{} // service id (or "*") -> allowed group label values
+
+	features map[string]map[string]struct{} // service id -> enabled features
 }
 
 // Raw returns the original JSON bytes, served verbatim at /rum-config.json so the
@@ -113,7 +133,42 @@ func Compile(raw []byte) (*Config, error) {
 		c.validServices[rc.DefaultService] = struct{}{}
 	}
 
+	// A misspelled feature would silently stay off, so it is a config error.
+	c.features = make(map[string]map[string]struct{}, len(rc.Features))
+	for svc, names := range rc.Features {
+		set := make(map[string]struct{}, len(names))
+		for _, n := range names {
+			if _, ok := knownFeatures[n]; !ok {
+				return nil, fmt.Errorf("service %q: unknown feature %q", svc, n)
+			}
+			set[n] = struct{}{}
+		}
+		c.features[svc] = set
+	}
+
 	return c, nil
+}
+
+// HasFeature reports whether service opted into the named feature.
+func (c *Config) HasFeature(service, feature string) bool {
+	_, ok := c.features[service][feature]
+	return ok
+}
+
+// ResolveReferrer classifies the referrer host of a document load on service.
+// label is one of referrer.Direct, Internal, Search or Other and is safe as a
+// metric label. host is the normalized host for the Loki line, or "" when the
+// beacon sent none or something that is not a host name (labelled other).
+func (c *Config) ResolveReferrer(service, raw string) (label, host string) {
+	if strings.TrimSpace(raw) == "" {
+		return referrer.Direct, ""
+	}
+	host, ok := referrer.Normalize(raw)
+	if !ok {
+		return referrer.Other, ""
+	}
+	isOwn := func(h string) bool { id, ok := c.services[h]; return ok && id == service }
+	return referrer.Classify(host, isOwn), host
 }
 
 // ResolveService maps a hostname to its service identifier, falling back to

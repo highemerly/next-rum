@@ -1,10 +1,12 @@
 package collect
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/highemerly/rum-collector/internal/config"
@@ -63,6 +65,24 @@ func counterValue(t *testing.T, mx *metrics.Metrics, name string, labels map[str
 		}
 	}
 	return 0
+}
+
+// counterSum adds up every series of a counter (counterValue returns the first match).
+func counterSum(t *testing.T, mx *metrics.Metrics, name string) float64 {
+	t.Helper()
+	fams, err := mx.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sum float64
+	for _, fam := range fams {
+		if fam.GetName() == name {
+			for _, m := range fam.GetMetric() {
+				sum += m.GetCounter().GetValue()
+			}
+		}
+	}
+	return sum
 }
 
 func labelsMatch(m *dto.Metric, want map[string]string) bool {
@@ -228,5 +248,178 @@ func TestCollectSoftNavTypeOnlyFromSoftNavigation(t *testing.T) {
 	}
 	if v := counterValue(t, mx, "rum_pageview_total", map[string]string{"nav_type": "soft"}); v != 0 {
 		t.Errorf("pageview soft = %v, want 0", v)
+	}
+}
+
+const featuresCfgJSON = `{
+  "services": { "hosteka.piyo.me": "hosteka", "handon.club": "handon" },
+  "default_service": "unknown",
+  "default_path_group": "other",
+  "path_groups": {
+    "hosteka": [ { "pattern": "/events/*", "group": "event" } ],
+    "handon":  [ { "pattern": "/web/**", "group": "web_ui" } ]
+  },
+  "features": { "hosteka": ["referrer", "auth"] }
+}`
+
+func newFeaturesHandler(t *testing.T) (*Handler, *metrics.Metrics) {
+	t.Helper()
+	return newFeaturesHandlerWithLoki(t, loki.New(loki.Options{}))
+}
+
+func newFeaturesHandlerWithLoki(t *testing.T, lk *loki.Client) (*Handler, *metrics.Metrics) {
+	t.Helper()
+	path := t.TempDir() + "/rum-config.json"
+	if err := os.WriteFile(path, []byte(featuresCfgJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loader, err := config.NewLoader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mx := metrics.New()
+	return NewHandler(loader, mx, lk, Options{}), mx
+}
+
+// captureLoki starts a fake Loki push endpoint. Call the returned function
+// after the posts: it drains the client and returns the JSON lines received.
+func captureLoki(t *testing.T) (*loki.Client, func() []map[string]any) {
+	t.Helper()
+	var (
+		mu    sync.Mutex
+		lines []map[string]any
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Streams []struct {
+				Values [][2]string `json:"values"`
+			} `json:"streams"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode loki push: %v", err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for _, st := range body.Streams {
+			for _, v := range st.Values {
+				var line map[string]any
+				if err := json.Unmarshal([]byte(v[1]), &line); err != nil {
+					t.Errorf("decode loki line: %v", err)
+				}
+				lines = append(lines, line)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	lk := loki.New(loki.Options{URL: srv.URL})
+	return lk, func() []map[string]any {
+		lk.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		return lines
+	}
+}
+
+func TestCollectReferrerOnFreshNavigation(t *testing.T) {
+	lk, lines := captureLoki(t)
+	h, mx := newFeaturesHandlerWithLoki(t, lk)
+	post(t, h, `[
+	  {"kind":"navigation","service":"hosteka","path":"/events/1","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"www.google.co.jp"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/2","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"Alice.Example"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/3","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"handon.club"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/4","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"hosteka.piyo.me"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/5","path_group":"event","device":"mobile","nav_type":"navigate"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/6","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"bad host/x"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/7","path_group":"event","device":"mobile","nav_type":"reload","referrer":"www.google.co.jp"}
+	]`)
+	// The metric only ever carries the four labels: another of the operator's
+	// services (handon) and an unparseable host are both "other".
+	for ref, want := range map[string]float64{"search": 1, "other": 3, "internal": 1, "direct": 1} {
+		if v := counterValue(t, mx, "rum_referrer_total", map[string]string{"service": "hosteka", "path_group": "event", "referrer": ref}); v != want {
+			t.Errorf("referrer %s = %v, want %v", ref, v, want)
+		}
+	}
+	// The reload keeps the original referrer; counting it would count the arrival twice.
+	if v := counterSum(t, mx, "rum_referrer_total"); v != 6 {
+		t.Errorf("referrer total = %v, want 6 (reload not counted)", v)
+	}
+
+	// The Loki line keeps the normalized host next to the label.
+	want := map[string][2]any{ // path -> {referrer, referrer_host}
+		"/events/1": {"search", "www.google.co.jp"},
+		"/events/2": {"other", "alice.example"},
+		"/events/3": {"other", "handon.club"},
+		"/events/4": {"internal", "hosteka.piyo.me"},
+		"/events/5": {"direct", nil},
+		"/events/6": {"other", nil}, // not a host name: never stored
+		"/events/7": {nil, nil},     // reload: no referrer at all
+	}
+	got := lines()
+	if len(got) != len(want) {
+		t.Fatalf("loki lines = %d, want %d", len(got), len(want))
+	}
+	for _, line := range got {
+		path, _ := line["path"].(string)
+		w, ok := want[path]
+		if !ok {
+			t.Errorf("unexpected loki line for %q", path)
+			continue
+		}
+		if line["referrer"] != w[0] || line["referrer_host"] != w[1] {
+			t.Errorf("%s: referrer=%v referrer_host=%v, want %v %v", path, line["referrer"], line["referrer_host"], w[0], w[1])
+		}
+	}
+}
+
+func TestCollectAuthOnPageviews(t *testing.T) {
+	h, mx := newFeaturesHandler(t)
+	post(t, h, `[
+	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate","auth":"in"},
+	  {"kind":"soft_navigation","service":"hosteka","path_group":"event","path":"/events/1","device":"mobile","auth":"out"},
+	  {"kind":"soft_navigation","service":"hosteka","path_group":"event","path":"/events/2","device":"mobile","auth":"admin"},
+	  {"kind":"web_vitals","service":"hosteka","path_group":"event","name":"LCP","value":1000,"rating":"good","device":"mobile","nav_type":"navigate","auth":"in"}
+	]`)
+	cases := []struct {
+		auth, navType string
+		want          float64
+	}{
+		{"in", "navigate", 1},
+		{"out", "soft", 1},
+		{"unknown", "soft", 1}, // anything but in/out clamps
+	}
+	for _, tc := range cases {
+		if v := counterValue(t, mx, "rum_pageview_auth_total", map[string]string{"service": "hosteka", "auth": tc.auth, "nav_type": tc.navType}); v != tc.want {
+			t.Errorf("auth %s/%s = %v, want %v", tc.auth, tc.navType, v, tc.want)
+		}
+	}
+	// web_vitals is not a page view.
+	if v := counterSum(t, mx, "rum_pageview_auth_total"); v != 3 {
+		t.Errorf("auth total = %v, want 3", v)
+	}
+}
+
+func TestCollectOptInSignalsIgnoredWithoutFeature(t *testing.T) {
+	h, mx := newFeaturesHandler(t)
+	// handon has not opted in, and EVIL is rejected to the fallback service:
+	// whatever the client sends, neither counter moves.
+	post(t, h, `[
+	  {"kind":"navigation","service":"handon","path_group":"web_ui","device":"desktop","nav_type":"navigate","referrer":"mastodon.social","auth":"in"},
+	  {"kind":"soft_navigation","service":"handon","path_group":"web_ui","path":"/web/x","device":"desktop","auth":"in"},
+	  {"kind":"navigation","service":"EVIL","path_group":"x","device":"desktop","nav_type":"navigate","referrer":"mastodon.social","auth":"in"}
+	]`)
+	for _, name := range []string{"rum_referrer_total", "rum_pageview_auth_total"} {
+		if v := counterSum(t, mx, name); v != 0 {
+			t.Errorf("%s = %v, want 0", name, v)
+		}
+	}
+}
+
+func TestSanitizeAuth(t *testing.T) {
+	cases := map[string]string{"in": "in", "out": "out", "": "unknown", "IN": "unknown", "admin": "unknown"}
+	for in, want := range cases {
+		if got := sanitizeAuth(in); got != want {
+			t.Errorf("sanitizeAuth(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

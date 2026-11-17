@@ -30,6 +30,7 @@ func TestEveryServiceHasPathGroups(t *testing.T) {
 	var doc struct {
 		Services   map[string]string `json:"services"`
 		PathGroups map[string]any    `json:"path_groups"`
+		Features   map[string]any    `json:"features"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
@@ -48,6 +49,13 @@ func TestEveryServiceHasPathGroups(t *testing.T) {
 		}
 		if _, ok := ids[key]; !ok {
 			t.Errorf("path_groups key %q matches no service id: the rules are dead", key)
+		}
+	}
+	// features is keyed by service id too; a host or a typo there leaves the
+	// feature silently off.
+	for key := range doc.Features {
+		if _, ok := ids[key]; !ok {
+			t.Errorf("features key %q matches no service id: the features are dead", key)
 		}
 	}
 }

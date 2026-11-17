@@ -109,3 +109,73 @@ test('beacon.js reports SPA route changes as soft_navigation', async ({ page }) 
     nav_type: 'soft',
   });
 });
+
+// features（サービスごとに有効にする信号）を確かめるための設定。localhost を features を持つサービスにする。
+// コレクタが配る rum-config.json をこのページの読み込みでだけ差し替える（送られた中身はコレクタではなく
+// ここで見るので、コレクタ側の設定は変えなくてよい）。
+async function routeConfigWithFeatures(page: Page, features: string[]) {
+  await page.route(`${COLLECTOR}/rum-config.json`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({
+        services: { localhost: 'e2e' },
+        default_service: 'unknown',
+        default_path_group: 'other',
+        path_groups: { e2e: [{ pattern: '/events/*', group: 'event' }] },
+        features: { e2e: features },
+      }),
+    }),
+  );
+}
+
+// ログイン状態を <html data-rum-auth> で教えるページ
+async function routePageWithAuth(page: Page, auth: string) {
+  await page.route(PAGE, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      headers: { 'Content-Security-Policy': CSP },
+      body: `<!doctype html><html data-rum-auth="${auth}"><head><title>e2e</title>
+<script async src="${COLLECTOR}/beacon.js"></script>
+</head><body><h1>e2e browser smoke</h1></body></html>`,
+    }),
+  );
+}
+
+test('beacon.js sends the referrer host and login state when the service opts in', async ({ page }) => {
+  const events = collectedEvents(page);
+  await routeConfigWithFeatures(page, ['referrer', 'auth']);
+  await routePageWithAuth(page, 'out');
+  // 前のページのパスとクエリは送らず、ホスト名だけを送る
+  await page.goto(PAGE, { referer: 'https://mastodon.social/@alice/123?x=1' });
+  await expect.poll(() => events.some((e) => e.kind === 'navigation'), { timeout: 10_000 }).toBe(true);
+
+  const nav = events.find((e) => e.kind === 'navigation');
+  expect(nav).toMatchObject({ service: 'e2e', path_group: 'event', referrer: 'mastodon.social', auth: 'out' });
+
+  // ページ遷移のたびに、その時点のログイン状態を読む（ログインしたらページが属性を書き換える）
+  await page.evaluate(() => {
+    document.documentElement.setAttribute('data-rum-auth', 'in');
+    history.pushState(null, '', '/events/e2e-after-login');
+  });
+  await expect.poll(() => events.find((e) => e.kind === 'soft_navigation')).toMatchObject({ auth: 'in' });
+  // 画面内の移動には外からの参照元が無い
+  expect(events.find((e) => e.kind === 'soft_navigation')).not.toHaveProperty('referrer');
+});
+
+test('beacon.js sends neither signal when the service has not opted in', async ({ page }) => {
+  const events = collectedEvents(page);
+  await routeConfigWithFeatures(page, []);
+  await routePageWithAuth(page, 'in');
+  await page.goto(PAGE, { referer: 'https://mastodon.social/@alice/123' });
+  await expect.poll(() => events.some((e) => e.kind === 'navigation'), { timeout: 10_000 }).toBe(true);
+
+  await page.evaluate(() => history.pushState(null, '', '/events/e2e-next'));
+  await expect.poll(() => events.some((e) => e.kind === 'soft_navigation')).toBe(true);
+  for (const e of events) {
+    expect(e).not.toHaveProperty('referrer');
+    expect(e).not.toHaveProperty('auth');
+  }
+});
