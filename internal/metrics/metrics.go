@@ -119,7 +119,7 @@ func New() *Metrics {
 		}, asnLabels),
 		referrerTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_referrer_total",
-			Help: "Document loads (nav_type=navigate) by referrer group: direct, internal, another service id, a referrer_groups group, or other (no host stored)",
+			Help: "Document loads (nav_type=navigate) by referrer: direct, internal, search or other",
 		}, referrerLabels),
 		pageviewAuthTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_pageview_auth_total",

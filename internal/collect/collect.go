@@ -227,10 +227,15 @@ func (h *Handler) record(cfg *config.Config, ev event, country, asn string) {
 		// Only a fresh navigation says where the visitor came from: a reload or
 		// back/forward keeps the referrer of the original load and would count
 		// the same arrival again.
+		// The metric gets one of four labels; the Loki line also keeps the host,
+		// which is free there and lets "other" be broken down later.
 		if withReferrer && navType == "navigate" {
-			ref := cfg.ResolveReferrer(service, ev.Referrer)
+			ref, host := cfg.ResolveReferrer(service, ev.Referrer)
 			h.mx.IncReferrer(service, pathGroup, ref)
 			fields["referrer"] = ref
+			if host != "" {
+				fields["referrer_host"] = host
+			}
 		}
 		if withAuth {
 			h.mx.IncPageviewAuth(service, pathGroup, auth, navType)

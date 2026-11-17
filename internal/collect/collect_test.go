@@ -1,10 +1,12 @@
 package collect
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/highemerly/rum-collector/internal/config"
@@ -257,11 +259,15 @@ const featuresCfgJSON = `{
     "hosteka": [ { "pattern": "/events/*", "group": "event" } ],
     "handon":  [ { "pattern": "/web/**", "group": "web_ui" } ]
   },
-  "features": { "hosteka": ["referrer", "auth"] },
-  "referrer_groups": [ { "pattern": "mastodon.social", "group": "mastodon.social" } ]
+  "features": { "hosteka": ["referrer", "auth"] }
 }`
 
 func newFeaturesHandler(t *testing.T) (*Handler, *metrics.Metrics) {
+	t.Helper()
+	return newFeaturesHandlerWithLoki(t, loki.New(loki.Options{}))
+}
+
+func newFeaturesHandlerWithLoki(t *testing.T, lk *loki.Client) (*Handler, *metrics.Metrics) {
 	t.Helper()
 	path := t.TempDir() + "/rum-config.json"
 	if err := os.WriteFile(path, []byte(featuresCfgJSON), 0o644); err != nil {
@@ -272,25 +278,97 @@ func newFeaturesHandler(t *testing.T) (*Handler, *metrics.Metrics) {
 		t.Fatal(err)
 	}
 	mx := metrics.New()
-	return NewHandler(loader, mx, loki.New(loki.Options{}), Options{}), mx
+	return NewHandler(loader, mx, lk, Options{}), mx
+}
+
+// captureLoki starts a fake Loki push endpoint. Call the returned function
+// after the posts: it drains the client and returns the JSON lines received.
+func captureLoki(t *testing.T) (*loki.Client, func() []map[string]any) {
+	t.Helper()
+	var (
+		mu    sync.Mutex
+		lines []map[string]any
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Streams []struct {
+				Values [][2]string `json:"values"`
+			} `json:"streams"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode loki push: %v", err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		for _, st := range body.Streams {
+			for _, v := range st.Values {
+				var line map[string]any
+				if err := json.Unmarshal([]byte(v[1]), &line); err != nil {
+					t.Errorf("decode loki line: %v", err)
+				}
+				lines = append(lines, line)
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	lk := loki.New(loki.Options{URL: srv.URL})
+	return lk, func() []map[string]any {
+		lk.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		return lines
+	}
 }
 
 func TestCollectReferrerOnFreshNavigation(t *testing.T) {
-	h, mx := newFeaturesHandler(t)
+	lk, lines := captureLoki(t)
+	h, mx := newFeaturesHandlerWithLoki(t, lk)
 	post(t, h, `[
-	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"mastodon.social"},
-	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"alice.example"},
-	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"navigate"},
-	  {"kind":"navigation","service":"hosteka","path_group":"event","device":"mobile","nav_type":"reload","referrer":"mastodon.social"}
+	  {"kind":"navigation","service":"hosteka","path":"/events/1","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"www.google.co.jp"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/2","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"Alice.Example"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/3","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"handon.club"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/4","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"hosteka.piyo.me"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/5","path_group":"event","device":"mobile","nav_type":"navigate"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/6","path_group":"event","device":"mobile","nav_type":"navigate","referrer":"bad host/x"},
+	  {"kind":"navigation","service":"hosteka","path":"/events/7","path_group":"event","device":"mobile","nav_type":"reload","referrer":"www.google.co.jp"}
 	]`)
-	for ref, want := range map[string]float64{"mastodon.social": 1, "other": 1, "direct": 1} {
+	// The metric only ever carries the four labels: another of the operator's
+	// services (handon) and an unparseable host are both "other".
+	for ref, want := range map[string]float64{"search": 1, "other": 3, "internal": 1, "direct": 1} {
 		if v := counterValue(t, mx, "rum_referrer_total", map[string]string{"service": "hosteka", "path_group": "event", "referrer": ref}); v != want {
 			t.Errorf("referrer %s = %v, want %v", ref, v, want)
 		}
 	}
 	// The reload keeps the original referrer; counting it would count the arrival twice.
-	if v := counterSum(t, mx, "rum_referrer_total"); v != 3 {
-		t.Errorf("referrer total = %v, want 3 (reload not counted)", v)
+	if v := counterSum(t, mx, "rum_referrer_total"); v != 6 {
+		t.Errorf("referrer total = %v, want 6 (reload not counted)", v)
+	}
+
+	// The Loki line keeps the normalized host next to the label.
+	want := map[string][2]any{ // path -> {referrer, referrer_host}
+		"/events/1": {"search", "www.google.co.jp"},
+		"/events/2": {"other", "alice.example"},
+		"/events/3": {"other", "handon.club"},
+		"/events/4": {"internal", "hosteka.piyo.me"},
+		"/events/5": {"direct", nil},
+		"/events/6": {"other", nil}, // not a host name: never stored
+		"/events/7": {nil, nil},     // reload: no referrer at all
+	}
+	got := lines()
+	if len(got) != len(want) {
+		t.Fatalf("loki lines = %d, want %d", len(got), len(want))
+	}
+	for _, line := range got {
+		path, _ := line["path"].(string)
+		w, ok := want[path]
+		if !ok {
+			t.Errorf("unexpected loki line for %q", path)
+			continue
+		}
+		if line["referrer"] != w[0] || line["referrer_host"] != w[1] {
+			t.Errorf("%s: referrer=%v referrer_host=%v, want %v %v", path, line["referrer"], line["referrer_host"], w[0], w[1])
+		}
 	}
 }
 

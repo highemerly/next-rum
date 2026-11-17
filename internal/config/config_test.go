@@ -134,12 +134,7 @@ const featuresJSON = `{
   "default_service": "unknown",
   "default_path_group": "other",
   "path_groups": { "*": [ { "pattern": "/", "group": "home" } ] },
-  "features": { "hosteka": ["referrer", "auth"] },
-  "referrer_groups": [
-    { "pattern": "mastodon.social", "group": "mastodon.social" },
-    { "pattern": "*.google.*",      "group": "search" },
-    { "pattern": "google.*",        "group": "search" }
-  ]
+  "features": { "hosteka": ["referrer", "auth"] }
 }`
 
 func TestHasFeature(t *testing.T) {
@@ -167,38 +162,33 @@ func TestCompileRejectsUnknownFeature(t *testing.T) {
 	}
 }
 
-func TestCompileRejectsEmptyReferrerGroup(t *testing.T) {
-	_, err := Compile([]byte(`{"services":{},"referrer_groups":[{"pattern":"a.example","group":""}]}`))
-	if err == nil {
-		t.Fatal("an empty referrer group must be a config error")
-	}
-}
-
 func TestResolveReferrer(t *testing.T) {
 	c, err := Compile([]byte(featuresJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cases := []struct{ host, want string }{
-		{"", "direct"},
-		{"  ", "direct"},
-		{"hosteka.piyo.me", "internal"},  // own host
-		{"HOSTEKA.piyo.me.", "internal"}, // case and trailing dot
-		{"anypost.dev", "anypost"},       // another configured service -> its id
-		{"mastodon.social", "mastodon.social"},
-		{"www.google.co.jp", "search"}, // * spans dots in a host
-		{"google.com", "search"},
-		{"alice.example", "other"},     // unlisted: never the host itself
-		{"evil.example/../x", "other"}, // not a host name
-		{"Ünïcode.example", "other"},
+	cases := []struct{ raw, label, host string }{
+		{"", "direct", ""},
+		{"  ", "direct", ""},
+		{"hosteka.piyo.me", "internal", "hosteka.piyo.me"},
+		{"HOSTEKA.piyo.me.", "internal", "hosteka.piyo.me"}, // case and trailing dot
+		{"anypost.dev", "other", "anypost.dev"},             // another service is not internal
+		{"www.google.co.jp", "search", "www.google.co.jp"},
+		{"mastodon.social", "other", "mastodon.social"},
+		{"evil.example/../x", "other", ""}, // not a host name: no host kept
+		{"Ünïcode.example", "other", ""},
 	}
 	for _, tc := range cases {
-		if got := c.ResolveReferrer("hosteka", tc.host); got != tc.want {
-			t.Errorf("ResolveReferrer(hosteka, %q) = %q, want %q", tc.host, got, tc.want)
+		label, host := c.ResolveReferrer("hosteka", tc.raw)
+		if label != tc.label || host != tc.host {
+			t.Errorf("ResolveReferrer(hosteka, %q) = %q, %q; want %q, %q", tc.raw, label, host, tc.label, tc.host)
 		}
 	}
 	// "internal" is relative to the service the page belongs to.
-	if got := c.ResolveReferrer("anypost", "hosteka.piyo.me"); got != "hosteka" {
-		t.Errorf("ResolveReferrer(anypost, hosteka host) = %q, want hosteka", got)
+	if label, _ := c.ResolveReferrer("anypost", "anypost.dev"); label != "internal" {
+		t.Errorf("ResolveReferrer(anypost, own host) = %q, want internal", label)
+	}
+	if label, _ := c.ResolveReferrer("anypost", "hosteka.piyo.me"); label != "other" {
+		t.Errorf("ResolveReferrer(anypost, hosteka host) = %q, want other", label)
 	}
 }
