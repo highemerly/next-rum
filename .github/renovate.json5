@@ -7,6 +7,10 @@
   timezone: 'Asia/Tokyo',
   // 週2回にまとめる（毎日 PR が来ると確認が追いつかず、週1だと間隔が空きすぎる）。
   schedule: ['before 9am on monday and thursday'],
+  // 時間あたりの上限（既定は1時間に2件）は外す。数は schedule で既に絞っており、App は枠の中で
+  // 数回しか動かないため、1回の枠で作られる PR が少なく、溜まった更新が次の枠へ持ち越される。
+  // 同時に開く数の上限（prConcurrentLimit・既定10）は、CI が壊れたときに PR が溜まり続けないよう残す。
+  prHourlyLimit: 0,
   labels: ['dependencies'],
   // PR が多くのリポジトリに来て見落とすので、自分に assign して github.com/pulls の「Assigned to you」にまとめる。
   // （自動マージにする PR は既定で assign されず、自動マージに失敗したときだけ assign される）
@@ -57,6 +61,36 @@
       // PR が来ても確かめようがない。上げるときは手で wrangler を上げてデプロイする。
       matchFileNames: ['deploy/cloudflare-worker/**'],
       enabled: false,
+    },
+    {
+      // マイナー・パッチ・digest は CI（ci-result＝gofmt・go vet・unit・本番イメージの API スモーク）が緑なら自動でマージする。
+      // e2e は本番と同じ設定・権限（非 root・読み取り専用のルート）でイメージを起動し、/collect から /metrics の出力まで見るので、
+      // ベースイメージ（golang・distroless）の digest もここで確かめられる。偽の Loki（python）と Playwright は本番に入らない。
+      // メジャー（承認制）・lockfile の一括更新（e2e/browser）は手でマージする。
+      // マージしても main に入るだけで、本番へはリリース（タグ）とデプロイ PR のマージを経る。
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      automerge: true,
+    },
+    {
+      // Go のマイナー（1.27 → 1.28）は Renovate ではマイナーだが、実際は言語のリリース。リリースノートで
+      // net/http・TLS などの挙動の変更を見てから手でマージする。パッチ（1.27.4 → 1.27.5）と digest は自動。
+      matchDepNames: ['go', 'golang'],
+      matchUpdateTypes: ['minor'],
+      automerge: false,
+    },
+    {
+      // CI が緑でも確かめきれていないもの。1つの PR に1つでも automerge: false の更新があれば自動ではマージされない。
+      // client_model・common（0.x）は /metrics のテキスト出力（名前のエスケープ・Content-Type の交渉）を変えうるのに
+      // Renovate はメジャー扱いせず、e2e が見ていない系列もある。common は間接依存なので、それを含む
+      // Go indirect dependencies の PR も手動になる。0.x の依存を足したら、ここにも足す。
+      matchPackageNames: ['github.com/prometheus/client_model', 'github.com/prometheus/common'],
+      automerge: false,
+    },
+    {
+      // タグ時にしか動かないワークフローは、ブランチの CI（ci-targets.sh）で何も回さず
+      // ci-result がスキップのまま緑になる＝何も確かめずにマージされてしまう。
+      matchFileNames: ['.github/workflows/docker-build.yml', '.github/workflows/tag-release.yml'],
+      automerge: false,
     },
   ],
 }
