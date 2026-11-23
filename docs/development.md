@@ -52,7 +52,11 @@ gh api -X PATCH repos/highemerly/next-rum \
 
 依存は Renovate（GitHub App）が出す PR で上げる。設定は [.github/renovate.json5](../.github/renovate.json5)（各ルールの理由はコメント参照）。
 
-- **毎週月曜・木曜の 9時前（JST）** にまとめて PR が来る（Go の間接依存の一括更新は月曜のみ）。自動マージはしない。PR は自分に assign される。
+- **毎週月曜・木曜の 9時前（JST）** にまとめて PR が来る（Go の間接依存の一括更新は月曜のみ）。PR は自分に assign される。
+- **マイナー・パッチ・digest は CI（`ci-result`）が緑なら自動でマージされる。** 除くのは、Go のマイナー（1.27 → 1.28）、0.x の `client_model`・`prometheus/common`（common は間接依存なので、
+  それを含む Go indirect dependencies の PR も）、lockfile の一括更新、タグ時にしか動かないワークフロー（docker-build.yml・tag-release.yml）。
+  PR に1つでも除外の更新が入っていれば手でマージする。自動でマージされる PR は assign されない（「Assigned to you」に残るのは手で見るものだけ）。
+- 自動でマージされても main に入るだけ。本番へはリリース（タグ）とデプロイの PR のマージを経る。
 - **メジャー更新**は PR が自動では来ず、Issue「Dependency Dashboard」の Pending Approval に並ぶ（コード側の対応が要るため）。
 - 1つの PR にまとまるもの：
   - **Go**：go.mod の `go` ディレクティブ・Dockerfile の `golang:X.Y.Z`・`.tool-versions`（CI の setup-go は go.mod を読むので、揃えないと CI とイメージで版がずれる）
@@ -65,21 +69,23 @@ gh api -X PATCH repos/highemerly/next-rum \
 
 ### PR が来たら
 
+自動でマージされなかったもの（assign されて残っているもの）を見る。
+
 1. CI（`ci-result`）が緑か見る。赤なら ruleset でマージできない。go.mod と Go のソースの変更は checks と e2e が両方走り、Dockerfile だけの変更は e2e だけが走る。
 2. PR 本文の変更履歴（Renovate が載せる）を読む。go.mod / go.sum の差分で、実際に入る版が変わっているかを見る（`go mod tidy` で間接依存も動くことがある）。
 3. 種類に応じて確認を足す。CI が見ているのは gofmt・`go vet`・unit テスト（`go test -race`）と、本番イメージを本番と同じ設定・権限で起動しての API スモーク（`e2e/smoke.sh`：配信物・CORS・`/collect` から `/metrics` のテキスト出力まで）：
 
    | 種類 | 例 | マージ前の確認 |
    |---|---|---|
-   | メトリクス | `prometheus/client_golang`・`prometheus/common`・`client_model` | e2e が `/metrics` のテキスト出力で主な系列の名前・ラベル・値を見ているので、緑ならマージ。common は 0.x で、マイナーでも出力（名前のエスケープ・Content-Type の交渉）を変え得るのに Renovate はメジャー扱いしない。e2e が見ていない系列もあるので変更履歴は読む |
-   | Go の版 | Go グループ | checks・e2e が緑ならマージ。マイナー（1.26 → 1.27）はリリースノートで net/http の挙動の変更を見る |
-   | ベースイメージ | `distroless` の digest | e2e が本番と同じ権限（非 root・読み取り専用のルート）で起動して確かめるので、緑ならマージ |
-   | テスト用イメージ | compose.yaml の `python`（偽の Loki） | 本番には入らない。e2e が緑ならマージ |
-   | テストの道具 | `@playwright/test`・e2e.yml の Node（setup-node の `node-version`） | 本番には入らない。e2e が緑ならマージ |
-   | リンクされているが使っていないもの | `prometheus/procfs`・`golang.org/x/sys`（プロセスや Go ランタイムのメトリクスは登録していない） | CI 緑ならマージ |
-   | タグ時にしか動かない Actions | docker/login-action・docker/metadata-action・peter-evans/create-pull-request | PR の CI では実行されない。マージ後、次のリリースの docker-build.yml で初めて動く |
+   | メトリクス | `prometheus/client_golang`・`prometheus/common`・`client_model` | client_golang は、e2e が `/metrics` のテキスト出力で主な系列の名前・ラベル・値を見ているので、緑ならマージ（自動）。client_model・common は 0.x で、マイナーでも出力（名前のエスケープ・Content-Type の交渉）を変え得るのに Renovate はメジャー扱いしない。e2e が見ていない系列もあるので手動で変更履歴を読む（common を含む Go indirect dependencies の PR も手動になる） |
+   | Go の版 | Go グループ | パッチと digest は自動。マイナー（1.27 → 1.28）は手動で、リリースノートで net/http の挙動の変更を見る |
+   | ベースイメージ | `distroless` の digest | e2e が本番と同じ権限（非 root・読み取り専用のルート）で起動して確かめるので、緑ならマージ（自動） |
+   | テスト用イメージ | compose.yaml の `python`（偽の Loki） | 本番には入らない。e2e が緑ならマージ（自動。lockfile の一括更新は手動） |
+   | テストの道具 | `@playwright/test`・e2e.yml の Node（setup-node の `node-version`） | 本番には入らない。e2e が緑ならマージ（自動。lockfile の一括更新は手動） |
+   | リンクされているが使っていないもの | `prometheus/procfs`・`golang.org/x/sys`（プロセスや Go ランタイムのメトリクスは登録していない） | CI 緑ならマージ（自動） |
+   | タグ時にしか動かない Actions | docker/login-action・docker/metadata-action・peter-evans/create-pull-request | 手動。PR の CI では実行されない。マージ後、次のリリースの docker-build.yml で初めて動く |
 4. squash マージする。**CI の構成（ワークフロー・e2e）を変えた PR のあとは、開いている Renovate の PR を Dashboard の「rebase all open PRs」で rebase し、新しい CI を通してからマージする**（ruleset は main への追従を求めていないので、古い CI の結果のままでもマージできてしまう）。
-5. 手元で取り込む：
+5. 手元で取り込む（自動でマージされたものも、作業を始める前に）：
    ```bash
    git switch main && git pull
    go mod download
@@ -94,7 +100,8 @@ gh api -X PATCH repos/highemerly/next-rum \
 ### その他
 
 - 今は要らない更新：PR を閉じる（その版は作り直されない。次の版が出れば再び PR になる）。恒久的に止めるなら renovate.json5 にルールを足す。
-- 急ぐ更新（セキュリティ修正など）：Dashboard の Awaiting Schedule でチェックを入れると、スケジュールを待たずに PR が作られる。
+- 脆弱性の修正：Dependabot alerts を有効にしてあり（Dependabot 自身の PR は無効のまま）、Renovate がスケジュールと公開からの3日待ちを待たずに PR を作る（題名の末尾に `[SECURITY]`）。自動マージの対象かどうかは通常と同じ。**マージしても本番には入らないので、マージしたらパッチ版をリリースする**。
+- その他の急ぐ更新：Dashboard の Awaiting Schedule でチェックを入れると、スケジュールを待たずに PR が作られる。
 - 手元で `go get -u` はしない（Renovate の PR とぶつかる）。依存の追加はブランチを切って PR で。
 - 設定を変えたら検証する（ファイルを引数に渡すとグローバル設定として検証されるので、引数なしで）：
   ```bash
