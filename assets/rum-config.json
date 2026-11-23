@@ -5,7 +5,8 @@
     "hosteka.piyo.me":  "hosteka",
     "mi.hiyoko.club":   "hiyoko",
     "pic.handon.club":  "movapic-neo",
-    "anypost.dev":      "anypost"
+    "anypost.dev":      "anypost",
+    "dominion.highemerly.net": "dominion"
   },
   "default_service": "unknown",
   "default_path_group": "other",
@@ -59,6 +60,12 @@
       { "pattern": "/privacy",  "group": "legal" },
       { "pattern": "/terms",    "group": "legal" },
       { "pattern": "/license",  "group": "legal" }
+    ],
+    "dominion": [
+      { "pattern": "/",           "group": "home" },
+      { "pattern": "/index.html", "group": "home" },
+      { "pattern": "/card.html",  "group": "card" },
+      { "pattern": "/help**",     "group": "help" }
     ],
     "hosteka": [
       { "pattern": "/",                     "group": "home" },
