@@ -65,7 +65,7 @@ gh api -X PATCH repos/highemerly/next-rum \
 - Go モジュールと npm は公開から3日待ってから PR になる（乗っ取られて公開された版は数日以内に取り下げられることが多いため）。
 - ベースイメージ（`golang`・`distroless`）と Dockerfile の syntax は digest で固定。中身の更新は digest 更新の PR として来る。
 - **Debian のリリース（`static-debian12` → `13`）は Renovate が提案しない**（イメージ名が変わるため）。distroless のサポート状況を見て手で上げる。
-- 対象外：`deploy/cloudflare-worker`（lockfile も CI も無く、wrangler で手でデプロイしている）と `assets/web-vitals.js`（手で同梱している）。上げるときは手で。
+- 対象外：`deploy/cloudflare-worker`（lockfile も CI も無く、wrangler で手でデプロイしている）と `assets/web-vitals.js`・`assets/web-vitals.attribution.js`（手で同梱している。npm の web-vitals の `dist/` から、同じ版の2つを揃えて入れる）。上げるときは手で。
 
 ### PR が来たら
 
@@ -154,11 +154,12 @@ main への push では CI を回さない。マージ前に同じ中身をブ�
 
 本番イメージを [compose.yaml](../compose.yaml) で、本番のマニフェストと同じ環境変数・設定ファイル（`assets/rum-config.json`＝本番の ConfigMap と同じ中身）・権限（非 root・読み取り専用のルート・capabilities なし）で起動し、[e2e/smoke.sh](../e2e/smoke.sh) が curl で叩く。
 
-- 見ているもの：`/healthz`、配信物（beacon.js・web-vitals.js・rum-config.json の中身・Content-Type・CORS・Cache-Control）、`/collect` の CORS、`/collect` に送ったイベントが `/metrics` のテキスト出力に出ること（主な系列の名前・ラベル・値）と、Loki へ push されること（ストリームのラベル・タイムスタンプ・本文の JSON）。
+- 見ているもの：`/healthz`、配信物（beacon.js・web-vitals.js・web-vitals.attribution.js・rum-config.json の中身・Content-Type・CORS・Cache-Control）、`/collect` の CORS、`/collect` に送ったイベントが `/metrics` のテキスト出力に出ること（主な系列の名前・ラベル・値）と、Loki へ push されること（ストリームのラベル・タイムスタンプ・本文の JSON。path が無いこと）、`Sec-GPC: 1` 付きの送りが（gpc_counts の無いサービスでは）どのカウンタにも Loki にも入らないこと。
 - Loki は compose 内の偽サーバー（[e2e/fake-loki/server.py](../e2e/fake-loki/server.py)。標準ライブラリだけ）に置き換えている。受けた push を記録するだけで、判定は smoke.sh が行う。本番のコードは変えておらず、`LOKI_URL` を向けているだけ。
 - コレクタは Loki へ5秒ごとにまとめて送る。それを待たずに確かめるため、smoke.sh は最後にコレクタを止める（本番の rollout と同じ SIGTERM。止まる前に溜まったログを送り切る）。rollout でログを落とさないことも、これで見ている。
 - 送るものは beacon.js が実際に送るものと同じ形にしている（`sendBeacon` に text/plain の Blob、`Origin` 付き、読み込み時は配列・離脱時の1件はオブジェクト）。beacon.js の送り方を変えたら smoke.sh も合わせる。
-- ブラウザでの確認は [e2e/browser](../e2e/browser/tests/beacon.spec.ts)（Playwright・Chromium）。計測対象のサイトに `<script async src=".../beacon.js">` を1行入れたページを作り、beacon.js・rum-config.json・web-vitals.js が 200 で読めること、未捕捉の JS 例外と CSP 違反が無いこと（サイト側の CSP はコレクタのオリジンだけを許す厳しいもの）、読み込み時のビーコンが `/collect` に届くこと、SPA の画面遷移（`history.pushState` など）で `soft_navigation` が送られることだけを見る。中身の検証は smoke.sh に任せる。
+- ブラウザでの確認は [e2e/browser](../e2e/browser/tests/beacon.spec.ts)（Playwright・Chromium）。計測対象のサイトに `<script async src=".../beacon.js">` を1行入れたページを作り、beacon.js・rum-config.json・web-vitals.js が 200 で読めること、未捕捉の JS 例外と CSP 違反が無いこと（サイト側の CSP はコレクタのオリジンだけを許す厳しいもの）、読み込み時のビーコンが `/collect` に届くこと、SPA の画面遷移（`history.pushState` など）で `soft_navigation` が送られること、ブラウザから出る項目が features と GPC に従っていること（有効にしていない信号を送らない、GPC のブラウザは gpc_counts が無ければ何も送らず、あれば許した項目だけを送る、パスを送らない）を見る。コレクタ側での記録の検証は smoke.sh と unit テストに任せる。
+  - features は、コレクタが配る rum-config.json をテストの中で差し替えて切り替える（コレクタの設定は変えない）。GPC は `navigator.globalPrivacyControl` を差し替えて再現する。タブが隠れたことは、ヘッドレスでは実際には起きないので `visibilityState` を差し替えて `visibilitychange` を出す。
   - ページは Playwright が route で返す（サーバーは要らない）。そのページは Chrome の Local Network Access で公開サイト扱いになり、127.0.0.1 のコレクタへの通信を止められるので、テストでは `local-network-access` の許可を与えている（本番は公開サイトから公開の rum.piyo.me を読むので当たらない）。
   - ブラウザのビーコンも smoke.sh が差で見ているカウンタに数えられるので、smoke.sh の後に、コレクタを起こし直してから回す。
 - 画面操作やリトライは入れない。起動待ちだけは、distroless にシェルが無くコンテナ内の healthcheck が書けないので、外から `/healthz` を curl で待つ。

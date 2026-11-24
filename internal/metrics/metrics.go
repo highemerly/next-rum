@@ -1,10 +1,13 @@
 // Package metrics defines the Prometheus collectors exported at /metrics and
 // scraped by VictoriaMetrics. All labels are bounded sets (service, path_group,
 // rating, device, nav_type, protocol, cf_cache status) so cardinality stays flat;
-// high-cardinality detail (raw path, metric_id, cf_colo) goes to Loki instead.
+// high-cardinality detail (metric_id, cf_colo, the Web Vitals attribution) goes
+// to Loki instead.
 package metrics
 
 import (
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -18,6 +21,7 @@ var (
 	bucketsTTFB = []float64{100, 200, 400, 600, 800, 1000, 1500, 2000, 3000}
 
 	bucketsNavMS    = []float64{5, 10, 20, 50, 100, 200, 500, 1000, 2000}
+	bucketsNavLoad  = []float64{250, 500, 1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 15000}
 	bucketsNavBytes = []float64{1024, 4096, 16384, 65536, 262144, 1048576, 4194304}
 
 	bucketsParse = prometheus.DefBuckets
@@ -36,6 +40,8 @@ type Metrics struct {
 	navRequest  *prometheus.HistogramVec
 	navResponse *prometheus.HistogramVec
 	navTransfer *prometheus.HistogramVec
+	navDCL      *prometheus.HistogramVec
+	navLoad     *prometheus.HistogramVec
 
 	cfCacheTotal  *prometheus.CounterVec
 	pageviewTotal *prometheus.CounterVec
@@ -44,8 +50,17 @@ type Metrics struct {
 
 	// Opt-in per service (rum-config.json "features"); see config.FeatureReferrer
 	// and config.FeatureAuth.
-	referrerTotal     *prometheus.CounterVec
-	pageviewAuthTotal *prometheus.CounterVec
+	referrerTotal       *prometheus.CounterVec
+	pageviewAuthTotal   *prometheus.CounterVec
+	viewportTotal       *prometheus.CounterVec
+	browserVersionTotal *prometheus.CounterVec
+	osVersionTotal      *prometheus.CounterVec
+	engagementSeconds   *prometheus.CounterVec
+	engagementReached   *prometheus.CounterVec
+
+	// Page views from browsers with Global Privacy Control (feature gpc_counts).
+	// Kept apart from rum_pageview_total because they carry no OS/browser.
+	pageviewGPCTotal *prometheus.CounterVec
 
 	receivedTotal  *prometheus.CounterVec
 	parseSeconds   prometheus.Histogram
@@ -62,7 +77,18 @@ var (
 	asnLabels      = []string{"service", "asn"}
 	referrerLabels = []string{"service", "path_group", "referrer"}
 	authLabels     = []string{"service", "path_group", "auth", "nav_type"}
+	viewportLabels = []string{"service", "device", "viewport"}
+	browserVerLbls = []string{"service", "browser", "major"}
+	osVerLabels    = []string{"service", "os", "major"}
+	engageLabels   = []string{"service", "path_group"}
+	reachedLabels  = []string{"service", "path_group", "ge"}
+	gpcPVLabels    = []string{"service", "path_group", "nav_type"}
 )
+
+// EngagementThresholds are the visible-time marks (seconds) counted by
+// rum_engagement_reached_total{ge="..."}: one increment when a page view's
+// visible time first reaches the mark.
+var EngagementThresholds = []int{10, 30, 60, 180, 600}
 
 // New builds and registers all collectors.
 func New() *Metrics {
@@ -99,6 +125,8 @@ func New() *Metrics {
 		navRequest:  newNav("rum_nav_request_milliseconds", "Request send time", bucketsNavMS, navLabels),
 		navResponse: newNav("rum_nav_response_milliseconds", "Response transfer time", bucketsNavMS, navRespLabels),
 		navTransfer: newNav("rum_nav_transfer_bytes", "HTML transfer size", bucketsNavBytes, navLabels),
+		navDCL:      newNav("rum_nav_dcl_milliseconds", "Navigation start to DOMContentLoaded end", bucketsNavLoad, navLabels),
+		navLoad:     newNav("rum_nav_load_milliseconds", "Navigation start to load event end (page load)", bucketsNavLoad, navLabels),
 		cfCacheTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_cf_cache_total",
 			Help: "Cloudflare cache status counts",
@@ -125,9 +153,33 @@ func New() *Metrics {
 			Name: "rum_pageview_auth_total",
 			Help: "Page views (document loads and SPA route changes) by whether the viewer is logged in (in/out/unknown)",
 		}, authLabels),
+		viewportTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_viewport_total",
+			Help: "Document loads by viewport width bucket",
+		}, viewportLabels),
+		browserVersionTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_browser_version_total",
+			Help: "Document loads by browser and its major version",
+		}, browserVerLbls),
+		osVersionTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_os_version_total",
+			Help: "Document loads by OS and its major version (unknown where the browser does not tell)",
+		}, osVerLabels),
+		engagementSeconds: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_engagement_seconds_total",
+			Help: "Seconds page views were visible (divide by page views for the average)",
+		}, engageLabels),
+		engagementReached: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_engagement_reached_total",
+			Help: "Page views whose visible time reached ge seconds",
+		}, reachedLabels),
+		pageviewGPCTotal: fac.NewCounterVec(prometheus.CounterOpts{
+			Name: "rum_pageview_gpc_total",
+			Help: "Page views from browsers with Global Privacy Control (no OS/browser/geo; add to rum_pageview_total for all page views)",
+		}, gpcPVLabels),
 		receivedTotal: fac.NewCounterVec(prometheus.CounterOpts{
 			Name: "rum_collector_received_total",
-			Help: "Collected events by kind and status (ok/parse_error/label_rejected)",
+			Help: "Collected events by kind and status (ok/parse_error/label_rejected/gpc_dropped)",
 		}, []string{"kind", "status"}),
 		parseSeconds: fac.NewHistogram(prometheus.HistogramOpts{
 			Name:    "rum_collector_parse_seconds",
@@ -173,6 +225,17 @@ func (m *Metrics) ObserveNav(l NavLabels, dns, tcp, tls, request, response, tran
 	m.navTransfer.WithLabelValues(l.Service, l.PathGroup, l.Device, l.Protocol).Observe(transferBytes)
 }
 
+// ObserveLoad records the DOMContentLoaded and load-event histograms. A value
+// of 0 or less means the page was hidden before that point and is skipped.
+func (m *Metrics) ObserveLoad(l NavLabels, dcl, load float64) {
+	if dcl > 0 {
+		m.navDCL.WithLabelValues(l.Service, l.PathGroup, l.Device, l.Protocol).Observe(dcl)
+	}
+	if load > 0 {
+		m.navLoad.WithLabelValues(l.Service, l.PathGroup, l.Device, l.Protocol).Observe(load)
+	}
+}
+
 // IncCFCache increments the Cloudflare cache-status counter.
 func (m *Metrics) IncCFCache(service, pathGroup, status, protocol, device string) {
 	m.cfCacheTotal.WithLabelValues(service, pathGroup, status, protocol, device).Inc()
@@ -206,7 +269,37 @@ func (m *Metrics) IncPageviewAuth(service, pathGroup, auth, navType string) {
 	m.pageviewAuthTotal.WithLabelValues(service, pathGroup, auth, navType).Inc()
 }
 
-// IncReceived records a /collect outcome (status = ok/parse_error/label_rejected).
+// IncViewport increments the per-document-load counter for the viewport bucket.
+func (m *Metrics) IncViewport(service, device, viewport string) {
+	m.viewportTotal.WithLabelValues(service, device, viewport).Inc()
+}
+
+// IncVersions increments the per-document-load browser and OS version counters.
+func (m *Metrics) IncVersions(service, browser, browserMajor, os, osMajor string) {
+	m.browserVersionTotal.WithLabelValues(service, browser, browserMajor).Inc()
+	m.osVersionTotal.WithLabelValues(service, os, osMajor).Inc()
+}
+
+// AddEngagement records one report of visible time for a page view: visible is
+// the time since the previous report, total the page view's time so far (both
+// seconds). Each threshold that total passes in this report is counted once.
+func (m *Metrics) AddEngagement(service, pathGroup string, visible, total float64) {
+	m.engagementSeconds.WithLabelValues(service, pathGroup).Add(visible)
+	prev := total - visible
+	for _, th := range EngagementThresholds {
+		t := float64(th)
+		if prev < t && total >= t {
+			m.engagementReached.WithLabelValues(service, pathGroup, itoa(th)).Inc()
+		}
+	}
+}
+
+// IncPageviewGPC increments the page-view counter for GPC browsers.
+func (m *Metrics) IncPageviewGPC(service, pathGroup, navType string) {
+	m.pageviewGPCTotal.WithLabelValues(service, pathGroup, navType).Inc()
+}
+
+// IncReceived records a /collect outcome (status = ok/parse_error/label_rejected/gpc_dropped).
 func (m *Metrics) IncReceived(kind, status string) {
 	m.receivedTotal.WithLabelValues(kind, status).Inc()
 }
@@ -216,3 +309,5 @@ func (m *Metrics) ObserveParse(seconds float64) { m.parseSeconds.Observe(seconds
 
 // IncLokiPushError increments the Loki push error counter.
 func (m *Metrics) IncLokiPushError() { m.lokiPushErrors.Inc() }
+
+func itoa(i int) string { return strconv.Itoa(i) }
