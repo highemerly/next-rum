@@ -40,9 +40,32 @@ const (
 	// FeatureAuth: whether the viewer is logged in, as declared by the page
 	// with <html data-rum-auth="in|out">.
 	FeatureAuth = "auth"
+	// FeatureAttribution: the Web Vitals breakdown (web-vitals attribution
+	// build) — the element behind LCP/INP/CLS as a reduced CSS selector and
+	// the sub-parts of each metric. Loki only.
+	FeatureAttribution = "attribution"
+	// FeatureVersions: the major version of the browser and of the OS. The OS
+	// version needs the high-entropy UA-CH hint platformVersion on Chromium,
+	// since the reduced UA string freezes it.
+	FeatureVersions = "versions"
+	// FeatureViewport: the viewport width as one of four buckets.
+	FeatureViewport = "viewport"
+	// FeatureUTM: utm_source / utm_medium / utm_campaign of a fresh document
+	// load. No other query parameter leaves the browser. Loki only.
+	FeatureUTM = "utm"
+	// FeatureEngagement: how long each page view was visible. Metrics only:
+	// the total seconds and how many page views reached each threshold.
+	FeatureEngagement = "engagement"
+	// FeatureGPCCounts: browsers with Global Privacy Control send page-view
+	// counts and the performance histograms, and nothing else (no Loki line,
+	// no visitor attribute). Without it a GPC browser sends nothing at all.
+	FeatureGPCCounts = "gpc_counts"
 )
 
-var knownFeatures = map[string]struct{}{FeatureReferrer: {}, FeatureAuth: {}}
+var knownFeatures = map[string]struct{}{
+	FeatureReferrer: {}, FeatureAuth: {}, FeatureAttribution: {}, FeatureVersions: {},
+	FeatureViewport: {}, FeatureUTM: {}, FeatureEngagement: {}, FeatureGPCCounts: {},
+}
 
 type compiledRule struct {
 	re    *regexp.Regexp

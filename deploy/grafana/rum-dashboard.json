@@ -229,7 +229,7 @@
     },
     {
       "title": "Page views per hour",
-      "description": "One increment per navigation beacon, i.e. per full document load. In-app (SPA) transitions do not count: beacon.js runs once per document, and a client-side route change creates no new Navigation Timing entry.",
+      "description": "One increment per document load and per SPA route change (nav_type=soft). Includes page views from browsers with Global Privacy Control (rum_pageview_gpc_total, services with the gpc_counts feature); the device / browser / OS panels do not, since those page views carry none of them.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
       "fieldConfig": {
@@ -249,7 +249,7 @@
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "targets": [
-        { "expr": "sum by (service)(increase(rum_pageview_total{service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{service}}" }
+        { "expr": "sum by (service)(increase({__name__=~\"rum_pageview_total|rum_pageview_gpc_total\", service=~\"$service\", path_group=~\"$path_group\"}[1h]))", "legendFormat": "{{service}}" }
       ]
     },
 

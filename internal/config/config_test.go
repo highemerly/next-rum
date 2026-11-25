@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const testJSON = `{
   "services": {
@@ -152,6 +155,23 @@ func TestHasFeature(t *testing.T) {
 	// No "features" key at all.
 	if mustCompile(t).HasFeature("handon", FeatureAuth) {
 		t.Error("features must be off when the key is absent")
+	}
+}
+
+func TestEveryFeatureCompiles(t *testing.T) {
+	all := []string{
+		FeatureReferrer, FeatureAuth, FeatureAttribution, FeatureVersions,
+		FeatureViewport, FeatureUTM, FeatureEngagement, FeatureGPCCounts,
+	}
+	raw := `{"services":{"hosteka.piyo.me":"hosteka"},"features":{"hosteka":["` + strings.Join(all, `","`) + `"]}}`
+	c, err := Compile([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range all {
+		if !c.HasFeature("hosteka", f) {
+			t.Errorf("hosteka should have %s", f)
+		}
 	}
 }
 

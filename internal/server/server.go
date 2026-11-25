@@ -33,6 +33,9 @@ func New(o Options) http.Handler {
 	mux.HandleFunc("GET /web-vitals.js", func(w http.ResponseWriter, r *http.Request) {
 		serveAsset(w, rumcollector.WebVitalsJS, "application/javascript; charset=utf-8", o.AssetMaxAge)
 	})
+	mux.HandleFunc("GET /web-vitals.attribution.js", func(w http.ResponseWriter, r *http.Request) {
+		serveAsset(w, rumcollector.WebVitalsAttributionJS, "application/javascript; charset=utf-8", o.AssetMaxAge)
+	})
 	mux.HandleFunc("GET /rum-config.json", func(w http.ResponseWriter, r *http.Request) {
 		// Serve the live config so client and server validate against the same bytes.
 		serveAsset(w, o.Config.Get().Raw(), "application/json; charset=utf-8", o.AssetMaxAge)

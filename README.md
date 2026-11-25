@@ -15,19 +15,24 @@ Section references below (§5, §8, §14, …) point into it.
 - Ingests beacons on `POST /collect` (single event or a batched array), records
   bounded-cardinality histograms and counters for VictoriaMetrics to scrape at
   `/metrics`, and pushes detailed logs to Loki.
-- Privacy-first: no user/session IDs, cookies, IPs, query strings, or raw UA
-  string. Only coarse `device` / `os` / `browser` (no versions) are derived from
-  UA-CH, plus visitor `country` / `asn` read server-side from Cloudflare edge
-  headers (the IP itself is never read or stored). GPC is honored client-side.
-  See design §5.
+- Privacy-first: no user/session IDs, cookies, IPs, URL paths (only the
+  `path_group` leaves the browser), query strings, or raw UA string. Only coarse
+  `device` / `os` / `browser` are derived from UA-CH, plus visitor `country` /
+  `asn` read server-side from Cloudflare edge headers (the IP itself is never
+  read or stored). More signals (versions, viewport, UTM, …) are sent only for
+  services that opt in, each named in that service's privacy policy first.
+  Browsers with Global Privacy Control send nothing, or — where the service opts
+  in — only page-view counts and performance histograms (see below). See
+  design §5.
 
 ### Beacon batching
 
 Web Vitals finalize at different times, so the loader does not POST per metric.
 It coalesces into at most **two** `/collect` beacons (each a JSON array):
 
-1. a **load batch** flushed at **3s** — `navigation` + `TTFB` + `FCP`, the
-   metrics that finalize during load;
+1. a **load batch** flushed at **3s**, or when the load event has finished if
+   that is later (but no later than 10s after navigation start) —
+   `navigation` + `TTFB` + `FCP`, the metrics that finalize during load;
 2. a **tail batch** flushed when the page is hidden/unloaded
    (`visibilitychange`→hidden / `pagehide`) — `LCP` (finalizes on first input),
    `INP`, `CLS`.
@@ -40,14 +45,24 @@ collector accepts a single event object or an array.
 
 In client-side-routed apps (Misskey, Mastodon's `/web`, Next.js) the loader also
 watches `history.pushState` / `replaceState` / `popstate`. Each change of
-`location.pathname` sends a `soft_navigation` event with the new `path` /
-`path_group` (query- or hash-only changes are ignored, and a pushState followed
-at once by a replaceState counts once). The collector counts it as a page view,
+`location.pathname` sends a `soft_navigation` event with the new `path_group`
+(the path itself never leaves the browser; query- or hash-only changes are
+ignored, and a pushState followed at once by a replaceState counts once). The collector counts it as a page view,
 `rum_pageview_total{nav_type="soft"}`, and writes it to Loki; it has no timings,
 so it does not touch the Navigation Timing histograms or the cache / country /
 ASN counters. Web Vitals stay attributed to the document that was actually
 loaded — splitting LCP/INP/CLS per route needs the Soft Navigations API, which is
 not available across browsers.
+
+### Page load time
+
+Every service's `navigation` event also carries `dcl_ms` (navigation start to
+the end of DOMContentLoaded) and `load_ms` (to the end of the load event — the
+page-load time), measured from activation for a prerendered page. They feed
+`rum_nav_dcl_milliseconds` / `rum_nav_load_milliseconds`
+`{service,path_group,device,protocol}` and the Loki line. A page hidden before
+it got there sends 0, which is neither observed nor logged. TTFB, FCP and LCP
+come from web-vitals as before.
 
 ### OS / browser
 
@@ -57,6 +72,11 @@ histograms** to protect their cardinality. They land in Loki and in a dedicated
 counter `rum_pageview_total{service,path_group,device,os,browser,nav_type}`
 (one increment per page load, plus one per SPA route change with
 `nav_type="soft"`) for distribution panels.
+
+iPadOS Safari presents itself as a Mac; the loader tells it apart by its touch
+points and reports `os="ios"`, `device="tablet"`. On iOS every browser is WebKit
+and names itself `CriOS` / `FxiOS` / `EdgiOS`; these count as chrome / firefox /
+edge.
 
 ### Country / ASN (Cloudflare edge geo)
 
@@ -69,16 +89,23 @@ so their large value spaces don't multiply other labels). The header names are
 configurable (`GEO_COUNTRY_HEADER` / `GEO_ASN_HEADER`) so the CF rule can be
 renamed without a rebuild. Setup: `deploy/cloudflare/transform-rules.md`.
 
-### Opt-in signals: referrer and login state
+### Opt-in signals
 
-Two more signals are **off unless a service lists them** under `features` in
+These signals are **off unless a service lists them** under `features` in
 `rum-config.json`. Each one is a data item the service's privacy policy has to
 name first, so the switch sits in the config, per service; the loader does not
 send them and the collector ignores them for any service that has not opted in.
+None of them is ever sent from a browser with Global Privacy Control.
 
 ```json
-"features": { "hosteka": ["referrer", "auth"] }
+"features": {
+  "hosteka": ["referrer", "auth", "attribution", "versions", "viewport", "utm", "engagement", "gpc_counts"]
+}
 ```
+
+A collector rejects a config naming a feature it does not know (a typo would
+otherwise leave it silently off), so roll out the image that knows a new
+feature before adding it to the ConfigMap.
 
 - **`referrer`** — on a document load, the loader sends only the **host** of
   `document.referrer` (never its path or query). The metric
@@ -106,13 +133,81 @@ send them and the collector ignores them for any service that has not opted in.
   login/logout is followed. Anything else is `unknown`. Counted in
   `rum_pageview_auth_total{service,path_group,auth,nav_type}` and added to the
   Loki line. It is a yes/no, not an identity.
+- **`attribution`** — the Web Vitals breakdown, from the web-vitals attribution
+  build (`/web-vitals.attribution.js`, loaded instead of the plain build). Loki
+  only, under `attribution` on the `web_vitals` line:
+  - LCP: `target`, `lcp_type` (`resource` / `text` — never the resource URL),
+    `ttfb`, `load_delay`, `load_duration`, `render_delay`
+  - INP: `target`, `interaction` (`pointer` / `keyboard`), `input_delay`,
+    `processing`, `presentation`, `load_state`
+  - CLS: `target`, `shift_value`, `load_state`
+  - FCP: `ttfb`, `first_byte_to_fcp`, `load_state`
+  - TTFB: `waiting`, `cache`, `dns`, `connection`, `request`
+
+  `target` is web-vitals' CSS selector reduced to tag names and classes: an id
+  (which often holds a post or user id) becomes a bare `#`, runs of four or more
+  digits become `N`, anything outside a plain selector is dropped, 100
+  characters at most. The loader reduces it and the collector repeats the rules.
+- **`versions`** — the major version of the browser and of the OS on each
+  document load, in `rum_browser_version_total{service,browser,major}` and
+  `rum_os_version_total{service,os,major}` (kept off the other metrics) and the
+  Loki line (`browser_major`, `os_major`). The reduced UA string keeps the
+  browser's major version but freezes the OS version, so on Chromium the OS
+  version comes from the high-entropy UA-CH hint `platformVersion` (Windows:
+  13 and up is `11`, below is `10`). Firefox (no UA-CH) cannot tell Windows 10
+  from 11 or name the macOS version, and Safari cannot name the macOS version:
+  those are `unknown`. On iOS, Safari's major version is the iOS version (the UA
+  string's OS version is frozen at 18_6 from iOS 26). The collector accepts
+  1–299 for a browser and 1–99 for an OS.
+- **`viewport`** — the viewport width at load as `0-639` / `640-1023` /
+  `1024-1439` / `1440+`, in `rum_viewport_total{service,device,viewport}` and
+  the Loki line.
+- **`utm`** — `utm_source` / `utm_medium` / `utm_campaign` of a fresh document
+  load (`nav_type="navigate"`), reduced to `[a-z0-9._-]` and 64 characters. Loki
+  only (free text would be unbounded as a label). No other query parameter
+  leaves the browser.
+- **`engagement`** — how long each page view (a document load, then each SPA
+  route change) was visible. The loader reports the visible time at every page
+  hide and when a route change ends the view; the collector adds it to
+  `rum_engagement_seconds_total{service,path_group}` (divide by page views for
+  the average) and counts `rum_engagement_reached_total{service,path_group,ge}`
+  once when the view's total first reaches 10 / 30 / 60 / 180 / 600 seconds.
+  Metrics only, no Loki line. An `engagement` event for a service without the
+  feature is counted as `rum_collector_received_total{status="feature_off"}`.
+- **`gpc_counts`** — see below.
+
+### Global Privacy Control
+
+A browser with GPC (`navigator.globalPrivacyControl === true`) sends nothing
+unless the service lists `gpc_counts`. With it, the loader sends only what the
+performance histograms and the page-view count need, plus `"gpc": true`:
+
+| event | fields |
+|---|---|
+| `navigation` | service, path_group, device, nav_type, dns/tcp/tls/request/response ms, transfer_size, protocol, cf_cache |
+| `web_vitals` | service, path_group, device, nav_type, name, value, rating |
+| `soft_navigation` | service, path_group, device, nav_type |
+
+No OS, browser, connection, timestamp, metric id, geo, load time or opt-in
+signal; no engagement. The collector records these into the same Web Vitals
+and navigation-timing histograms as everyone else and counts the page view in
+`rum_pageview_gpc_total{service,path_group,nav_type}` (add it to
+`rum_pageview_total` for all page views). Nothing reaches Loki, and the geo
+headers are not read.
+
+The collector enforces this itself: a request with the `Sec-GPC: 1` header, or
+an event with `"gpc": true`, takes this path whatever else it carries (a browser
+can send the header without exposing `navigator.globalPrivacyControl`). For a
+service without `gpc_counts` it is dropped and counted as
+`rum_collector_received_total{status="gpc_dropped"}`.
 
 ## Layout
 
 ```
 assets/                  embedded client assets
-  beacon.js              loader (GPC gate, config fetch, web-vitals, sendBeacon)
-  web-vitals.js          GoogleChrome/web-vitals v4 (ESM)
+  beacon.js              loader (config fetch, GPC gate, web-vitals, sendBeacon)
+  web-vitals.js          GoogleChrome/web-vitals v4.2.4 (ESM)
+  web-vitals.attribution.js  the same release's attribution build
   rum-config.json        single source: host->service, path->path_group
 cmd/rum-collector/       main: env, config hot-reload, graceful shutdown
 internal/
@@ -138,6 +233,7 @@ deploy/
 |--------|--------------------|-------------------------------|---------------------|
 | GET    | `/beacon.js`       | loader JS                     | ACAO `*`            |
 | GET    | `/web-vitals.js`   | web-vitals (module import)    | ACAO `*`            |
+| GET    | `/web-vitals.attribution.js` | web-vitals attribution build (`attribution` feature) | ACAO `*` |
 | GET    | `/rum-config.json` | live config                   | ACAO `*`            |
 | POST   | `/collect`         | beacon intake (204)           | ACAO = allowed origin |
 | GET    | `/metrics`         | Prometheus (internal only)    | —                   |
